@@ -28,6 +28,12 @@ public struct LessonNote: Identifiable, Codable, Equatable {
     }
 }
 
+public enum AttendanceStatus: String, Codable, CaseIterable {
+    case none
+    case attended
+    case skipped
+}
+
 public enum TransferType: String, Codable {
     case removal
     case addition

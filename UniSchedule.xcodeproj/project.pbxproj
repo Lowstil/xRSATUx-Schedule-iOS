@@ -39,6 +39,7 @@
 		A00101012B00000100000030 /* schedule.xlsx in Resources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000030 /* schedule.xlsx */; };
 		A00101012B00000100000031 /* Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000031 /* Tests.swift */; };
 		A00101012B00000100000032 /* XLSXReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000033 /* XLSXReader.swift */; };
+		A00101012B00000100000034 /* AttendanceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000034 /* AttendanceManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -77,6 +78,7 @@
 		A00102012B00000100000031 /* Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests.swift; sourceTree = "<group>"; };
 		A00102012B00000100000032 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A00102012B00000100000033 /* XLSXReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XLSXReader.swift; sourceTree = "<group>"; };
+		A00102012B00000100000034 /* AttendanceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttendanceManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +148,7 @@
 				A00102012B00000100000006 /* HolidayChecker.swift */,
 				A00102012B00000100000007 /* ScheduleClock.swift */,
 				A00102012B00000100000008 /* ScheduleFilter.swift */,
+				A00102012B00000100000034 /* AttendanceManager.swift */,
 			);
 			path = Logic;
 			sourceTree = "<group>";
@@ -367,6 +370,7 @@
 				A00101012B00000100000006 /* HolidayChecker.swift in Sources */,
 				A00101012B00000100000007 /* ScheduleClock.swift in Sources */,
 				A00101012B00000100000008 /* ScheduleFilter.swift in Sources */,
+				A00101012B00000100000034 /* AttendanceManager.swift in Sources */,
 				A00101012B00000100000009 /* NetworkService.swift in Sources */,
 				A00101012B00000100000010 /* ScheduleParser.swift in Sources */,
 				A00101012B00000100000032 /* XLSXReader.swift in Sources */,

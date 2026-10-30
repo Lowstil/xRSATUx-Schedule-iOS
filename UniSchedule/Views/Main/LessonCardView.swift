@@ -4,23 +4,32 @@ public struct LessonCardView: View {
     public let item: ScheduleItem
     public let clockState: ScheduleClockState
     public let isGroupView: Bool
+    public let date: Date
     public let note: LessonNote?
+    public let warningText: String?
     public let onOpenNote: () -> Void
+    public let onOpenAttendance: () -> Void
     public let onToggleSkipped: () -> Void
     
     public init(
         item: ScheduleItem,
         clockState: ScheduleClockState,
         isGroupView: Bool,
+        date: Date = Date(),
         note: LessonNote? = nil,
+        warningText: String? = nil,
         onOpenNote: @escaping () -> Void,
+        onOpenAttendance: @escaping () -> Void = {},
         onToggleSkipped: @escaping () -> Void
     ) {
         self.item = item
         self.clockState = clockState
         self.isGroupView = isGroupView
+        self.date = date
         self.note = note
+        self.warningText = warningText
         self.onOpenNote = onOpenNote
+        self.onOpenAttendance = onOpenAttendance
         self.onToggleSkipped = onToggleSkipped
     }
     
@@ -30,6 +39,10 @@ public struct LessonCardView: View {
     
     private var isNextInBreak: Bool {
         clockState.isBreak && clockState.nextLessonNumber == item.lessonNumber && !item.isCancelled
+    }
+    
+    private var isFuture: Bool {
+        Calendar.current.startOfDay(for: date) > Calendar.current.startOfDay(for: Date())
     }
     
     public var body: some View {
@@ -94,7 +107,7 @@ public struct LessonCardView: View {
                     .foregroundColor(.secondary)
             }
             
-            // Status flags (Cancelled, Moved, Excluded, Skipped)
+            // Status flags (Cancelled, Moved, Excluded, Skipped, Attended)
             if item.isCancelled {
                 HStack(spacing: 4) {
                     Image(systemName: "xmark.circle.fill")
@@ -120,13 +133,38 @@ public struct LessonCardView: View {
                         .foregroundColor(.purple)
                 }
             } else if item.isSkipped {
-                HStack(spacing: 4) {
-                    Image(systemName: "figure.walk.motion")
-                        .foregroundColor(.orange)
-                    Text("Не пойду на пару")
+                HStack(spacing: 5) {
+                    Text("🔴 Н-ка")
                         .font(.caption.bold())
+                        .foregroundColor(.red)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.red.opacity(0.12))
+                .cornerRadius(6)
+            } else if item.isAttended {
+                HStack(spacing: 5) {
+                    Text(isFuture ? "✓ Пойду" : "✓ Посещено")
+                        .font(.caption.bold())
+                        .foregroundColor(.green)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.green.opacity(0.12))
+                .cornerRadius(6)
+            }
+            
+            // Attendance Warning Banner
+            if let warning = warningText, !item.isCancelled, !item.isExcluded, !item.isSkipped {
+                HStack(spacing: 6) {
+                    Text(warning)
+                        .font(.caption2.bold())
                         .foregroundColor(.orange)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.orange.opacity(0.12))
+                .cornerRadius(6)
             }
             
             // Homework Note preview
@@ -153,17 +191,25 @@ public struct LessonCardView: View {
         }
         .padding(14)
         .cardStyle(isActive: isCurrent)
+        .opacity(item.isCancelled || item.isSkipped || item.isExcluded ? 0.6 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture {
             onOpenNote()
         }
+        .onLongPressGesture {
+            onOpenAttendance()
+        }
         .contextMenu {
+            Button(action: onOpenAttendance) {
+                Label("Отметить посещаемость", systemImage: "checkmark.circle.badge.questionmark")
+            }
+            
             Button(action: onOpenNote) {
                 Label("Добавить заметку / ДЗ", systemImage: "square.and.pencil")
             }
             
             Button(action: onToggleSkipped) {
-                Label(item.isSkipped ? "Пойду на пару" : "Не пойду на пару", systemImage: "figure.walk.motion")
+                Label(item.isSkipped ? "Сбросить Н-ку" : "Поставить Н-ку (Пропуск)", systemImage: "figure.walk.motion")
             }
         }
     }

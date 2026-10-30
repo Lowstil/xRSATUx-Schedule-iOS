@@ -50,6 +50,13 @@ public final class ScheduleViewModel: ObservableObject {
                 self?.loadSchedule()
             }
             .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: NSNotification.Name("AttendanceChanged"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.loadSchedule()
+            }
+            .store(in: &cancellables)
     }
     
     public var currentDaySchedule: DaySchedule? {
@@ -138,13 +145,53 @@ public final class ScheduleViewModel: ObservableObject {
         HapticsService.shared.selection()
     }
     
-    // MARK: - Actions on Lessons
+    // MARK: - Actions on Lessons & Attendance
     public func toggleSkippedLesson(item: ScheduleItem) {
         guard let day = currentDaySchedule else { return }
         let dateStr = DateUtils.isoDateFormatter.string(from: day.date)
         _ = repository.toggleLessonSkipped(dateString: dateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
         loadSchedule()
         HapticsService.shared.notification(.success)
+    }
+    
+    public func markLessonAttended(item: ScheduleItem, date: Date) {
+        let dateStr = DateUtils.isoDateFormatter.string(from: date)
+        repository.markLessonAttended(dateString: dateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
+        loadSchedule()
+        HapticsService.shared.notification(.success)
+    }
+    
+    public func markLessonSkipped(item: ScheduleItem, date: Date) {
+        let dateStr = DateUtils.isoDateFormatter.string(from: date)
+        repository.markLessonSkipped(dateString: dateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
+        loadSchedule()
+        HapticsService.shared.notification(.warning)
+    }
+    
+    public func clearLessonAttendance(item: ScheduleItem, date: Date) {
+        let dateStr = DateUtils.isoDateFormatter.string(from: date)
+        repository.clearLessonAttendance(dateString: dateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
+        loadSchedule()
+        HapticsService.shared.selection()
+    }
+    
+    public func adjustManualSkips(subjectName: String, delta: Int) {
+        repository.adjustManualSkips(group: selectedName, subject: subjectName, delta: delta)
+        loadSchedule()
+        HapticsService.shared.selection()
+    }
+    
+    public func getAttendanceReport() -> AttendanceManager.AttendanceReport {
+        return AttendanceManager.shared.calculateReport(
+            groupName: selectedName,
+            repository: repository,
+            weekCalculator: weekCalculator
+        )
+    }
+    
+    public func getWarningForSubject(_ subject: String) -> String? {
+        guard isGroup else { return nil }
+        return AttendanceManager.shared.getWarningForSubject(subject, groupName: selectedName, repository: repository)
     }
     
     // MARK: - Live Timer Loop

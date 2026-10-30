@@ -19,7 +19,14 @@ public struct ScheduleItem: Identifiable, Codable, Equatable, Hashable {
     public var isRoomChanged: Bool = false
     public var transferNote: String? = nil
     public var isExcluded: Bool = false // "Перезачёт"
-    public var isSkipped: Bool = false  // "Не пойду"
+    public var isSkipped: Bool = false  // "Н-ка"
+    public var isAttended: Bool = false // "Посещено / Пойду"
+    
+    public var attendanceStatus: AttendanceStatus {
+        if isSkipped { return .skipped }
+        if isAttended { return .attended }
+        return .none
+    }
     
     public init(
         id: UUID = UUID(),
@@ -38,7 +45,8 @@ public struct ScheduleItem: Identifiable, Codable, Equatable, Hashable {
         isRoomChanged: Bool = false,
         transferNote: String? = nil,
         isExcluded: Bool = false,
-        isSkipped: Bool = false
+        isSkipped: Bool = false,
+        isAttended: Bool = false
     ) {
         self.id = id
         self.weekType = weekType
@@ -57,6 +65,7 @@ public struct ScheduleItem: Identifiable, Codable, Equatable, Hashable {
         self.transferNote = transferNote
         self.isExcluded = isExcluded
         self.isSkipped = isSkipped
+        self.isAttended = isAttended
     }
     
     public var isOnline: Bool {

@@ -198,14 +198,16 @@ public final class ScheduleRepository: ObservableObject {
             let weekNum = weekCalculator.getWeekNumber(for: checkDate)
             guard weekNum > 0 else { continue }
             let weekType = weekCalculator.isEvenWeek(weekNum) ? Constants.weekTypeEven : Constants.weekTypeOdd
+            let checkDateStr = DateUtils.isoDateFormatter.string(from: checkDate)
             
             let dayLessons = items.filter { item in
-                item.dayOfWeek == dow &&
-                item.weekType.lowercased() == weekType.lowercased() &&
-                item.isActiveOnWeek(weekNum) &&
-                !item.isCancelled &&
-                !item.isExcluded &&
-                !item.isSkipped
+                let skipped = self.isLessonSkipped(dateString: checkDateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
+                return item.dayOfWeek == dow &&
+                    item.weekType.lowercased() == weekType.lowercased() &&
+                    item.isActiveOnWeek(weekNum) &&
+                    !item.isCancelled &&
+                    !item.isExcluded &&
+                    !skipped
             }.sorted(by: { $0.lessonNumber < $1.lessonNumber })
             
             let times = Constants.getLessonTimes(dayOfWeek: dow)
@@ -303,27 +305,114 @@ public final class ScheduleRepository: ObservableObject {
         }
     }
     
-    // MARK: - Skipped Lessons ("Не пойду на пару")
+    // MARK: - Attendance & Skipped Lessons ("Н-ки" и "Посещено")
+    private func buildAttendanceKey(dateString: String, lessonNumber: Int, subject: String) -> String {
+        return "\(dateString)#\(lessonNumber)#\(subject.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+    
     public func isLessonSkipped(dateString: String, lessonNumber: Int, subject: String) -> Bool {
         let set = Set(userDefaults.stringArray(forKey: Constants.prefSkippedLessons) ?? [])
-        let key = "\(dateString)#\(lessonNumber)#\(subject)"
-        return set.contains(key)
+        let exact = buildAttendanceKey(dateString: dateString, lessonNumber: lessonNumber, subject: subject)
+        if set.contains(exact) { return true }
+        let shortKey = "\(dateString)#\(lessonNumber)#"
+        return set.contains(where: { $0.hasPrefix(shortKey) })
+    }
+    
+    public func isLessonAttended(dateString: String, lessonNumber: Int, subject: String) -> Bool {
+        let set = Set(userDefaults.stringArray(forKey: Constants.prefAttendedLessons) ?? [])
+        let exact = buildAttendanceKey(dateString: dateString, lessonNumber: lessonNumber, subject: subject)
+        if set.contains(exact) { return true }
+        let shortKey = "\(dateString)#\(lessonNumber)#"
+        return set.contains(where: { $0.hasPrefix(shortKey) })
+    }
+    
+    public func getAttendanceStatus(dateString: String, lessonNumber: Int, subject: String) -> AttendanceStatus {
+        if isLessonSkipped(dateString: dateString, lessonNumber: lessonNumber, subject: subject) {
+            return .skipped
+        }
+        if isLessonAttended(dateString: dateString, lessonNumber: lessonNumber, subject: subject) {
+            return .attended
+        }
+        return .none
+    }
+    
+    public func markLessonSkipped(dateString: String, lessonNumber: Int, subject: String) {
+        let exact = buildAttendanceKey(dateString: dateString, lessonNumber: lessonNumber, subject: subject)
+        let shortKey = "\(dateString)#\(lessonNumber)#"
+        
+        var skippedSet = Set(userDefaults.stringArray(forKey: Constants.prefSkippedLessons) ?? [])
+        var attendedSet = Set(userDefaults.stringArray(forKey: Constants.prefAttendedLessons) ?? [])
+        
+        skippedSet = skippedSet.filter { $0 != exact && !$0.hasPrefix(shortKey) }
+        attendedSet = attendedSet.filter { $0 != exact && !$0.hasPrefix(shortKey) }
+        
+        skippedSet.insert(exact)
+        userDefaults.set(Array(skippedSet), forKey: Constants.prefSkippedLessons)
+        userDefaults.set(Array(attendedSet), forKey: Constants.prefAttendedLessons)
+        NotificationCenter.default.post(name: NSNotification.Name("AttendanceChanged"), object: nil)
+    }
+    
+    public func markLessonAttended(dateString: String, lessonNumber: Int, subject: String) {
+        let exact = buildAttendanceKey(dateString: dateString, lessonNumber: lessonNumber, subject: subject)
+        let shortKey = "\(dateString)#\(lessonNumber)#"
+        
+        var skippedSet = Set(userDefaults.stringArray(forKey: Constants.prefSkippedLessons) ?? [])
+        var attendedSet = Set(userDefaults.stringArray(forKey: Constants.prefAttendedLessons) ?? [])
+        
+        skippedSet = skippedSet.filter { $0 != exact && !$0.hasPrefix(shortKey) }
+        attendedSet = attendedSet.filter { $0 != exact && !$0.hasPrefix(shortKey) }
+        
+        attendedSet.insert(exact)
+        userDefaults.set(Array(skippedSet), forKey: Constants.prefSkippedLessons)
+        userDefaults.set(Array(attendedSet), forKey: Constants.prefAttendedLessons)
+        NotificationCenter.default.post(name: NSNotification.Name("AttendanceChanged"), object: nil)
+    }
+    
+    public func clearLessonAttendance(dateString: String, lessonNumber: Int, subject: String) {
+        let exact = buildAttendanceKey(dateString: dateString, lessonNumber: lessonNumber, subject: subject)
+        let shortKey = "\(dateString)#\(lessonNumber)#"
+        
+        var skippedSet = Set(userDefaults.stringArray(forKey: Constants.prefSkippedLessons) ?? [])
+        var attendedSet = Set(userDefaults.stringArray(forKey: Constants.prefAttendedLessons) ?? [])
+        
+        skippedSet = skippedSet.filter { $0 != exact && !$0.hasPrefix(shortKey) }
+        attendedSet = attendedSet.filter { $0 != exact && !$0.hasPrefix(shortKey) }
+        
+        userDefaults.set(Array(skippedSet), forKey: Constants.prefSkippedLessons)
+        userDefaults.set(Array(attendedSet), forKey: Constants.prefAttendedLessons)
+        NotificationCenter.default.post(name: NSNotification.Name("AttendanceChanged"), object: nil)
     }
     
     public func toggleLessonSkipped(dateString: String, lessonNumber: Int, subject: String) -> Bool {
-        var set = Set(userDefaults.stringArray(forKey: Constants.prefSkippedLessons) ?? [])
-        let key = "\(dateString)#\(lessonNumber)#\(subject)"
-        let wasSkipped = set.contains(key)
-        if wasSkipped {
-            set.remove(key)
+        if isLessonSkipped(dateString: dateString, lessonNumber: lessonNumber, subject: subject) {
+            clearLessonAttendance(dateString: dateString, lessonNumber: lessonNumber, subject: subject)
+            return false
         } else {
-            set.insert(key)
+            markLessonSkipped(dateString: dateString, lessonNumber: lessonNumber, subject: subject)
+            return true
         }
-        userDefaults.set(Array(set), forKey: Constants.prefSkippedLessons)
-        return !wasSkipped
+    }
+    
+    // Manual adjustments (+/- skips for subject)
+    public func getManualAdjustment(group: String, subject: String) -> Int {
+        let key = "\(Constants.prefAttendanceManualPrefix)\(group.trimmingCharacters(in: .whitespacesAndNewlines))_\(subject.trimmingCharacters(in: .whitespacesAndNewlines))"
+        return userDefaults.integer(forKey: key)
+    }
+    
+    public func adjustManualSkips(group: String, subject: String, delta: Int) {
+        let key = "\(Constants.prefAttendanceManualPrefix)\(group.trimmingCharacters(in: .whitespacesAndNewlines))_\(subject.trimmingCharacters(in: .whitespacesAndNewlines))"
+        let current = userDefaults.integer(forKey: key)
+        userDefaults.set(current + delta, forKey: key)
+        NotificationCenter.default.post(name: NSNotification.Name("AttendanceChanged"), object: nil)
     }
     
     // MARK: - Excluded Subjects ("Перезачёт")
+    public func isSubjectExcluded(group: String, subject: String) -> Bool {
+        let key = Constants.prefExcludedSubjectsPrefix + group.trimmingCharacters(in: .whitespacesAndNewlines)
+        let set = Set(userDefaults.stringArray(forKey: key) ?? [])
+        return set.contains(subject.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    
     public func getExcludedSubjects(for group: String) -> Set<String> {
         let key = Constants.prefExcludedSubjectsPrefix + group.trimmingCharacters(in: .whitespacesAndNewlines)
         return Set(userDefaults.stringArray(forKey: key) ?? [])

@@ -73,6 +73,8 @@ public enum Constants {
     public static let prefReminderMinutesBefore = "pref_reminder_minutes_before"
     public static let prefMorningDigestEnabled = "pref_morning_digest_enabled"
     public static let prefSkippedLessons = "pref_skipped_lessons"
+    public static let prefAttendedLessons = "pref_attended_lessons"
+    public static let prefAttendanceManualPrefix = "att_manual_"
     public static let prefExcludedSubjectsPrefix = "pref_excluded_subjects_"
     
     // MARK: - App Group for Widgets

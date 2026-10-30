@@ -6,8 +6,10 @@ public struct MainScheduleView: View {
     
     @State private var showingSelectionSheet = false
     @State private var showingBellSheet = false
+    @State private var showingAttendanceStatsSheet = false
     @State private var showingSettingsSheet = false
     @State private var activeNoteItem: ScheduleItem? = nil
+    @State private var attendanceTarget: (item: ScheduleItem, date: Date)? = nil
     
     public init() {}
     
@@ -143,14 +145,20 @@ public struct MainScheduleView: View {
                                         lessonNumber: item.lessonNumber,
                                         subject: item.subjectName
                                     )
+                                    let warning = viewModel.getWarningForSubject(item.subjectName)
                                     
                                     LessonCardView(
                                         item: item,
                                         clockState: viewModel.clockState,
                                         isGroupView: viewModel.isGroup,
+                                        date: day.date,
                                         note: note,
+                                        warningText: warning,
                                         onOpenNote: {
                                             activeNoteItem = item
+                                        },
+                                        onOpenAttendance: {
+                                            attendanceTarget = (item: item, date: day.date)
                                         },
                                         onToggleSkipped: {
                                             viewModel.toggleSkippedLesson(item: item)
@@ -184,8 +192,16 @@ public struct MainScheduleView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { showingBellSheet = true }) {
-                        Image(systemName: "bell.badge")
+                    HStack(spacing: 12) {
+                        Button(action: { showingBellSheet = true }) {
+                            Image(systemName: "bell.badge")
+                        }
+                        
+                        if viewModel.isGroup {
+                            Button(action: { showingAttendanceStatsSheet = true }) {
+                                Image(systemName: "chart.bar.xaxis")
+                            }
+                        }
                     }
                 }
                 
@@ -203,8 +219,32 @@ public struct MainScheduleView: View {
             .sheet(isPresented: $showingBellSheet) {
                 BellScheduleSheet(clockState: viewModel.clockState)
             }
+            .sheet(isPresented: $showingAttendanceStatsSheet) {
+                AttendanceStatisticsSheet(groupName: viewModel.selectedName)
+            }
             .sheet(isPresented: $showingSettingsSheet) {
                 SettingsView()
+            }
+            .sheet(isPresented: Binding(
+                get: { attendanceTarget != nil },
+                set: { if !$0 { attendanceTarget = nil } }
+            )) {
+                if let target = attendanceTarget {
+                    MarkLessonAttendanceSheet(
+                        item: target.item,
+                        date: target.date,
+                        onMarkAttended: {
+                            viewModel.markLessonAttended(item: target.item, date: target.date)
+                        },
+                        onMarkSkipped: {
+                            viewModel.markLessonSkipped(item: target.item, date: target.date)
+                        },
+                        onReset: {
+                            viewModel.clearLessonAttendance(item: target.item, date: target.date)
+                        }
+                    )
+                    .presentationDetents([.fraction(0.58), .medium])
+                }
             }
             .sheet(item: $activeNoteItem) { item in
                 if let day = viewModel.currentDaySchedule {

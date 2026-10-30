@@ -35,6 +35,22 @@ public final class ScheduleFilter {
                 lessons = mergeTransfers(lessons: lessons, transfers: dayTransfers, date: date, dow: dow, weekType: weekType)
             }
             
+            // Decorate with dynamic attendance status & exclusion for this specific date
+            let dateStr = DateUtils.isoDateFormatter.string(from: date)
+            let repo = ScheduleRepository.shared
+            let excluded = repo.getExcludedSubjects(for: targetName)
+            
+            lessons = lessons.map { item in
+                var copy = item
+                if excluded.contains(item.subjectName) {
+                    copy.isExcluded = true
+                }
+                let status = repo.getAttendanceStatus(dateString: dateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
+                copy.isSkipped = (status == .skipped)
+                copy.isAttended = (status == .attended)
+                return copy
+            }
+            
             // Sort by lesson number
             day.lessons = lessons.sorted(by: { $0.lessonNumber < $1.lessonNumber })
             days.append(day)
