@@ -1,0 +1,573 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00101012B00000100000001 /* UniScheduleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000001 /* UniScheduleApp.swift */; };
+		A00101012B00000100000002 /* ScheduleItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000002 /* ScheduleItem.swift */; };
+		A00101012B00000100000003 /* DaySchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000003 /* DaySchedule.swift */; };
+		A00101012B00000100000004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000004 /* Models.swift */; };
+		A00101012B00000100000005 /* WeekCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000005 /* WeekCalculator.swift */; };
+		A00101012B00000100000006 /* HolidayChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000006 /* HolidayChecker.swift */; };
+		A00101012B00000100000007 /* ScheduleClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000007 /* ScheduleClock.swift */; };
+		A00101012B00000100000008 /* ScheduleFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000008 /* ScheduleFilter.swift */; };
+		A00101012B00000100000009 /* NetworkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000009 /* NetworkService.swift */; };
+		A00101012B00000100000010 /* ScheduleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000010 /* ScheduleParser.swift */; };
+		A00101012B00000100000011 /* ScheduleRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000011 /* ScheduleRepository.swift */; };
+		A00101012B00000100000012 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000012 /* NotificationManager.swift */; };
+		A00101012B00000100000013 /* HapticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000013 /* HapticsService.swift */; };
+		A00101012B00000100000014 /* WidgetDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000014 /* WidgetDataService.swift */; };
+		A00101012B00000100000015 /* ScheduleViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000015 /* ScheduleViewModel.swift */; };
+		A00101012B00000100000016 /* SelectionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000016 /* SelectionViewModel.swift */; };
+		A00101012B00000100000017 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000017 /* SettingsViewModel.swift */; };
+		A00101012B00000100000018 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000018 /* Components.swift */; };
+		A00101012B00000100000019 /* Dialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000019 /* Dialogs.swift */; };
+		A00101012B00000100000020 /* SelectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000020 /* SelectionViews.swift */; };
+		A00101012B00000100000021 /* LessonCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000021 /* LessonCardView.swift */; };
+		A00101012B00000100000022 /* WeekDayPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000022 /* WeekDayPickerView.swift */; };
+		A00101012B00000100000023 /* MainScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000023 /* MainScheduleView.swift */; };
+		A00101012B00000100000024 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000024 /* SettingsView.swift */; };
+		A00101012B00000100000025 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000025 /* Constants.swift */; };
+		A00101012B00000100000026 /* DateUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000026 /* DateUtils.swift */; };
+		A00101012B00000100000027 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000027 /* Extensions.swift */; };
+		A00101012B00000100000028 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000028 /* Assets.xcassets */; };
+		A00101012B00000100000029 /* SampleSchedule.json in Resources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000029 /* SampleSchedule.json */; };
+		A00101012B00000100000030 /* schedule.xlsx in Resources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000030 /* schedule.xlsx */; };
+		A00101012B00000100000031 /* Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000031 /* Tests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A00100012B00000100000001 /* UniSchedule.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UniSchedule.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00100012B00000100000002 /* UniScheduleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = UniScheduleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00102012B00000100000001 /* UniScheduleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniScheduleApp.swift; sourceTree = "<group>"; };
+		A00102012B00000100000002 /* ScheduleItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleItem.swift; sourceTree = "<group>"; };
+		A00102012B00000100000003 /* DaySchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaySchedule.swift; sourceTree = "<group>"; };
+		A00102012B00000100000004 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A00102012B00000100000005 /* WeekCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekCalculator.swift; sourceTree = "<group>"; };
+		A00102012B00000100000006 /* HolidayChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayChecker.swift; sourceTree = "<group>"; };
+		A00102012B00000100000007 /* ScheduleClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleClock.swift; sourceTree = "<group>"; };
+		A00102012B00000100000008 /* ScheduleFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFilter.swift; sourceTree = "<group>"; };
+		A00102012B00000100000009 /* NetworkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkService.swift; sourceTree = "<group>"; };
+		A00102012B00000100000010 /* ScheduleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleParser.swift; sourceTree = "<group>"; };
+		A00102012B00000100000011 /* ScheduleRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleRepository.swift; sourceTree = "<group>"; };
+		A00102012B00000100000012 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		A00102012B00000100000013 /* HapticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticsService.swift; sourceTree = "<group>"; };
+		A00102012B00000100000014 /* WidgetDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataService.swift; sourceTree = "<group>"; };
+		A00102012B00000100000015 /* ScheduleViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleViewModel.swift; sourceTree = "<group>"; };
+		A00102012B00000100000016 /* SelectionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionViewModel.swift; sourceTree = "<group>"; };
+		A00102012B00000100000017 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
+		A00102012B00000100000018 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		A00102012B00000100000019 /* Dialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dialogs.swift; sourceTree = "<group>"; };
+		A00102012B00000100000020 /* SelectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionViews.swift; sourceTree = "<group>"; };
+		A00102012B00000100000021 /* LessonCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LessonCardView.swift; sourceTree = "<group>"; };
+		A00102012B00000100000022 /* WeekDayPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekDayPickerView.swift; sourceTree = "<group>"; };
+		A00102012B00000100000023 /* MainScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainScheduleView.swift; sourceTree = "<group>"; };
+		A00102012B00000100000024 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A00102012B00000100000025 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		A00102012B00000100000026 /* DateUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateUtils.swift; sourceTree = "<group>"; };
+		A00102012B00000100000027 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		A00102012B00000100000028 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A00102012B00000100000029 /* SampleSchedule.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = SampleSchedule.json; sourceTree = "<group>"; };
+		A00102012B00000100000030 /* schedule.xlsx */ = {isa = PBXFileReference; lastKnownFileType = file; path = schedule.xlsx; sourceTree = "<group>"; };
+		A00102012B00000100000031 /* Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests.swift; sourceTree = "<group>"; };
+		A00102012B00000100000032 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00103012B00000100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00103012B00000100000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00104012B00000100000001 = {
+			isa = PBXGroup;
+			children = (
+				A00104012B00000100000002 /* UniSchedule */,
+				A00104012B00000100000009 /* UniScheduleTests */,
+				A00104012B00000100000010 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000002 /* UniSchedule */ = {
+			isa = PBXGroup;
+			children = (
+				A00104012B00000100000003 /* App */,
+				A00104012B00000100000004 /* Models */,
+				A00104012B00000100000005 /* Logic */,
+				A00104012B00000100000006 /* Services */,
+				A00104012B00000100000007 /* ViewModels */,
+				A00104012B00000100000008 /* Views */,
+				A00104012B00000100000014 /* Utils */,
+				A00104012B00000100000015 /* Resources */,
+			);
+			path = UniSchedule;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000001 /* UniScheduleApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000004 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000002 /* ScheduleItem.swift */,
+				A00102012B00000100000003 /* DaySchedule.swift */,
+				A00102012B00000100000004 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000005 /* Logic */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000005 /* WeekCalculator.swift */,
+				A00102012B00000100000006 /* HolidayChecker.swift */,
+				A00102012B00000100000007 /* ScheduleClock.swift */,
+				A00102012B00000100000008 /* ScheduleFilter.swift */,
+			);
+			path = Logic;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000006 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000009 /* NetworkService.swift */,
+				A00102012B00000100000010 /* ScheduleParser.swift */,
+				A00102012B00000100000011 /* ScheduleRepository.swift */,
+				A00102012B00000100000012 /* NotificationManager.swift */,
+				A00102012B00000100000013 /* HapticsService.swift */,
+				A00102012B00000100000014 /* WidgetDataService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000007 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000015 /* ScheduleViewModel.swift */,
+				A00102012B00000100000016 /* SelectionViewModel.swift */,
+				A00102012B00000100000017 /* SettingsViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000008 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A00104012B00000100000011 /* Components */,
+				A00104012B00000100000012 /* Dialogs */,
+				A00104012B00000100000013 /* Selection */,
+				A00102012B00000100000021 /* LessonCardView.swift */,
+				A00102012B00000100000022 /* WeekDayPickerView.swift */,
+				A00102012B00000100000023 /* MainScheduleView.swift */,
+				A00102012B00000100000024 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000011 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000018 /* Components.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000012 /* Dialogs */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000019 /* Dialogs.swift */,
+			);
+			path = Dialogs;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000013 /* Selection */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000020 /* SelectionViews.swift */,
+			);
+			path = Selection;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000014 /* Utils */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000025 /* Constants.swift */,
+				A00102012B00000100000026 /* DateUtils.swift */,
+				A00102012B00000100000027 /* Extensions.swift */,
+			);
+			path = Utils;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000015 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000028 /* Assets.xcassets */,
+				A00102012B00000100000029 /* SampleSchedule.json */,
+				A00102012B00000100000030 /* schedule.xlsx */,
+				A00102012B00000100000032 /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000009 /* UniScheduleTests */ = {
+			isa = PBXGroup;
+			children = (
+				A00102012B00000100000031 /* Tests.swift */,
+			);
+			path = UniScheduleTests;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000010 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00100012B00000100000001 /* UniSchedule.app */,
+				A00100012B00000100000002 /* UniScheduleTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00105012B00000100000001 /* UniSchedule */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00106012B00000100000001 /* Build configuration list for PBXNativeTarget "UniSchedule" */;
+			buildPhases = (
+				A00107012B00000100000001 /* Sources */,
+				A00103012B00000100000001 /* Frameworks */,
+				A00108012B00000100000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = UniSchedule;
+			productName = UniSchedule;
+			productReference = A00100012B00000100000001 /* UniSchedule.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A00105012B00000100000002 /* UniScheduleTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00106012B00000100000002 /* Build configuration list for PBXNativeTarget "UniScheduleTests" */;
+			buildPhases = (
+				A00107012B00000100000002 /* Sources */,
+				A00103012B00000100000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00109012B00000100000001 /* PBXTargetDependency */,
+			);
+			name = UniScheduleTests;
+			productName = UniScheduleTests;
+			productReference = A00100012B00000100000002 /* UniScheduleTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00100002B00000100000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					A00105012B00000100000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					A00105012B00000100000002 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = A00105012B00000100000001;
+					};
+				};
+			};
+			buildConfigurationList = A00106012B00000100000000 /* Build configuration list for PBXProject "UniSchedule" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = ru;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				ru,
+				Base,
+			);
+			mainGroup = A00104012B00000100000001;
+			productRefGroup = A00104012B00000100000010 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00105012B00000100000001 /* UniSchedule */,
+				A00105012B00000100000002 /* UniScheduleTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00108012B00000100000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00101012B00000100000028 /* Assets.xcassets in Resources */,
+				A00101012B00000100000029 /* SampleSchedule.json in Resources */,
+				A00101012B00000100000030 /* schedule.xlsx in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00107012B00000100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00101012B00000100000001 /* UniScheduleApp.swift in Sources */,
+				A00101012B00000100000002 /* ScheduleItem.swift in Sources */,
+				A00101012B00000100000003 /* DaySchedule.swift in Sources */,
+				A00101012B00000100000004 /* Models.swift in Sources */,
+				A00101012B00000100000005 /* WeekCalculator.swift in Sources */,
+				A00101012B00000100000006 /* HolidayChecker.swift in Sources */,
+				A00101012B00000100000007 /* ScheduleClock.swift in Sources */,
+				A00101012B00000100000008 /* ScheduleFilter.swift in Sources */,
+				A00101012B00000100000009 /* NetworkService.swift in Sources */,
+				A00101012B00000100000010 /* ScheduleParser.swift in Sources */,
+				A00101012B00000100000011 /* ScheduleRepository.swift in Sources */,
+				A00101012B00000100000012 /* NotificationManager.swift in Sources */,
+				A00101012B00000100000013 /* HapticsService.swift in Sources */,
+				A00101012B00000100000014 /* WidgetDataService.swift in Sources */,
+				A00101012B00000100000015 /* ScheduleViewModel.swift in Sources */,
+				A00101012B00000100000016 /* SelectionViewModel.swift in Sources */,
+				A00101012B00000100000017 /* SettingsViewModel.swift in Sources */,
+				A00101012B00000100000018 /* Components.swift in Sources */,
+				A00101012B00000100000019 /* Dialogs.swift in Sources */,
+				A00101012B00000100000020 /* SelectionViews.swift in Sources */,
+				A00101012B00000100000021 /* LessonCardView.swift in Sources */,
+				A00101012B00000100000022 /* WeekDayPickerView.swift in Sources */,
+				A00101012B00000100000023 /* MainScheduleView.swift in Sources */,
+				A00101012B00000100000024 /* SettingsView.swift in Sources */,
+				A00101012B00000100000025 /* Constants.swift in Sources */,
+				A00101012B00000100000026 /* DateUtils.swift in Sources */,
+				A00101012B00000100000027 /* Extensions.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00107012B00000100000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00101012B00000100000031 /* Tests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A00109012B00000100000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00105012B00000100000001 /* UniSchedule */;
+			targetProxy = A0010A012B00000100000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		A0010A012B00000100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00100002B00000100000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00105012B00000100000001;
+			remoteInfo = UniSchedule;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin XCBuildConfiguration section */
+		A0010B012B00000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A0010B012B00000100000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		A0010B012B00000100000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = ""UniSchedule/Preview Content"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = UniSchedule/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Расписание РГАТУ";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.university.schedule.UniSchedule;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A0010B012B00000100000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = ""UniSchedule/Preview Content"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = UniSchedule/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Расписание РГАТУ";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.university.schedule.UniSchedule;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A0010B012B00000100000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.university.schedule.UniScheduleTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/UniSchedule.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/UniSchedule";
+			};
+			name = Debug;
+		};
+		A0010B012B00000100000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.university.schedule.UniScheduleTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/UniSchedule.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/UniSchedule";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00106012B00000100000000 /* Build configuration list for PBXProject "UniSchedule" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0010B012B00000100000001 /* Debug */,
+				A0010B012B00000100000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00106012B00000100000001 /* Build configuration list for PBXNativeTarget "UniSchedule" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0010B012B00000100000003 /* Debug */,
+				A0010B012B00000100000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00106012B00000100000002 /* Build configuration list for PBXNativeTarget "UniScheduleTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0010B012B00000100000005 /* Debug */,
+				A0010B012B00000100000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = A00100002B00000100000001 /* Project object */;
+}

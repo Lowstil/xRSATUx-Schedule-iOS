@@ -1,0 +1,29 @@
+# Xcode
+## User settings
+xcuserdata/
+
+## Build generated
+build/
+DerivedData/
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+
+## Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+## Swift Package Manager
+.build/
+Packages/
+.swiftpm/
+
+## CocoaPods (if used)
+Pods/
+
+## macOS
+.DS_Store
+*.swp
+*~
