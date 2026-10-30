@@ -36,6 +36,14 @@ public final class SemesterManager {
         return calendar.date(from: comp) ?? date
     }
     
+    public static func loadSemesterStart() -> Date {
+        if let str = UserDefaults.standard.string(forKey: Constants.prefSemesterStart),
+           let d = DateUtils.isoDateFormatter.date(from: str) {
+            return d
+        }
+        return getDefaultSemesterStart()
+    }
+    
     public static func describeSemester(startDate: Date) -> String {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: startDate)
@@ -60,7 +68,7 @@ public final class SemesterManager {
 public final class WeekCalculator {
     public let semesterStartDate: Date
     
-    public init(semesterStartDate: Date) {
+    public init(semesterStartDate: Date = SemesterManager.loadSemesterStart()) {
         self.semesterStartDate = semesterStartDate
     }
     
