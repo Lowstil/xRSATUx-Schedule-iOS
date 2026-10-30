@@ -107,15 +107,21 @@ public final class ZIPArchive {
     }
     
     private func readUInt16(at offset: Int) -> UInt16 {
-        data.withUnsafeBytes { ptr in
-            ptr.load(fromByteOffset: offset, as: UInt16.self).littleEndian
-        }
+        guard offset + 2 <= data.count else { return 0 }
+        let base = data.startIndex + offset
+        let b0 = UInt16(data[base])
+        let b1 = UInt16(data[base + 1])
+        return b0 | (b1 << 8)
     }
     
     private func readUInt32(at offset: Int) -> UInt32 {
-        data.withUnsafeBytes { ptr in
-            ptr.load(fromByteOffset: offset, as: UInt32.self).littleEndian
-        }
+        guard offset + 4 <= data.count else { return 0 }
+        let base = data.startIndex + offset
+        let b0 = UInt32(data[base])
+        let b1 = UInt32(data[base + 1])
+        let b2 = UInt32(data[base + 2])
+        let b3 = UInt32(data[base + 3])
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
     
     private func decompressRawDeflate(data: Data, uncompressedSize: Int) -> Data? {
