@@ -180,12 +180,28 @@
 				A00104012B00000100000011 /* Components */,
 				A00104012B00000100000012 /* Dialogs */,
 				A00104012B00000100000013 /* Selection */,
+				A00104012B00000100000016 /* Main */,
+				A00104012B00000100000017 /* Settings */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000016 /* Main */ = {
+			isa = PBXGroup;
+			children = (
 				A00102012B00000100000021 /* LessonCardView.swift */,
 				A00102012B00000100000022 /* WeekDayPickerView.swift */,
 				A00102012B00000100000023 /* MainScheduleView.swift */,
+			);
+			path = Main;
+			sourceTree = "<group>";
+		};
+		A00104012B00000100000017 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
 				A00102012B00000100000024 /* SettingsView.swift */,
 			);
-			path = Views;
+			path = Settings;
 			sourceTree = "<group>";
 		};
 		A00104012B00000100000011 /* Components */ = {
