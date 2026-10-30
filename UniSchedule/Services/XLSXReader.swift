@@ -127,7 +127,8 @@ public final class ZIPArchive {
         
         let bufferSize = max(uncompressedSize, 65536)
         var decompressed = Data()
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        let buffer = UnsafeMutablePointer<Bytef>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
         
         return data.withUnsafeBytes { rawInput in
             guard let baseAddress = rawInput.baseAddress else { return nil }
@@ -136,7 +137,7 @@ public final class ZIPArchive {
             
             repeat {
                 stream.avail_out = uInt(bufferSize)
-                stream.next_out = &buffer
+                stream.next_out = buffer
                 status = inflate(&stream, Z_NO_FLUSH)
                 if status != Z_OK && status != Z_STREAM_END && status != Z_BUF_ERROR {
                     return nil
