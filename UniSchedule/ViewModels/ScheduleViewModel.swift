@@ -18,7 +18,7 @@ public final class ScheduleViewModel: ObservableObject {
     private let repository = ScheduleRepository.shared
     private let scheduleFilter = ScheduleFilter()
     private var weekCalculator: WeekCalculator
-    private var timerCancellable: AnyCancellable?
+    private var cancellables = Set<AnyCancellable>()
     
     public init() {
         let semesterStart = SemesterManager.getDefaultSemesterStart()
@@ -39,6 +39,17 @@ public final class ScheduleViewModel: ObservableObject {
         
         loadSchedule()
         startLiveTimer()
+        bindRepository()
+    }
+    
+    private func bindRepository() {
+        // Automatically reload UI whenever repository completes an update
+        repository.$allItems
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.loadSchedule()
+            }
+            .store(in: &cancellables)
     }
     
     public var currentDaySchedule: DaySchedule? {
@@ -83,11 +94,14 @@ public final class ScheduleViewModel: ObservableObject {
     
     public func refresh() async {
         isLoading = true
+        errorMessage = nil
         do {
             try await repository.refreshSchedule()
             loadSchedule()
+            HapticsService.shared.notification(.success)
         } catch {
-            self.errorMessage = "Не удалось обновить расписание: \(error.localizedDescription)"
+            self.errorMessage = "Не удалось обновить: \(error.localizedDescription)"
+            HapticsService.shared.notification(.error)
         }
         isLoading = false
     }
@@ -135,11 +149,12 @@ public final class ScheduleViewModel: ObservableObject {
     
     // MARK: - Live Timer Loop
     private func startLiveTimer() {
-        timerCancellable = Timer.publish(every: 15, on: .main, in: .common)
+        Timer.publish(every: 15, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.updateLiveClock()
             }
+            .store(in: &cancellables)
     }
     
     private func updateLiveClock() {

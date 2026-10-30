@@ -2,19 +2,50 @@ import SwiftUI
 
 public struct MainScheduleView: View {
     @StateObject private var viewModel = ScheduleViewModel()
+    @ObservedObject private var repository = ScheduleRepository.shared
     
     @State private var showingSelectionSheet = false
     @State private var showingBellSheet = false
     @State private var showingSettingsSheet = false
     @State private var activeNoteItem: ScheduleItem? = nil
     
-    private let repository = ScheduleRepository.shared
-    
     public init() {}
     
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Updating Banner
+                if repository.isUpdating {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Загрузка актуального расписания с сайта...")
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(.accentColor)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor.opacity(0.12))
+                } else if let errorMsg = viewModel.errorMessage {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(errorMsg)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Spacer()
+                        Button("Повторить") {
+                            Task { await viewModel.refresh() }
+                        }
+                        .font(.caption.bold())
+                        .foregroundColor(.accentColor)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.15))
+                }
+                
                 // Favorites bar
                 FavoritesBarView(
                     favorites: repository.favorites,

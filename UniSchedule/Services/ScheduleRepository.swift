@@ -11,6 +11,7 @@ public final class ScheduleRepository: ObservableObject {
     @Published public private(set) var notes: [LessonNote] = []
     @Published public private(set) var lastUpdated: Date? = nil
     @Published public private(set) var isUpdating: Bool = false
+    @Published public private(set) var updateErrorMessage: String? = nil
     
     private let userDefaults: UserDefaults
     private let scheduleFilter = ScheduleFilter()
@@ -21,25 +22,54 @@ public final class ScheduleRepository: ObservableObject {
         return docs.appendingPathComponent(cacheFileName)
     }
     
+    private var cachedXLSXURL: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent(Constants.scheduleCacheFileName)
+    }
+    
     private init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         loadFromCacheOrBundle()
         loadFavorites()
         loadNotes()
+        
+        // Auto-refresh in background if due (similar to SplashActivity / MainActivity in Android)
+        Task {
+            await maybeAutoRefresh()
+        }
     }
     
     // MARK: - Initial Load
     public func loadFromCacheOrBundle() {
+        // 1. Try saved parsed JSON in Documents
         if FileManager.default.fileExists(atPath: cacheFileURL.path),
            let data = try? Data(contentsOf: cacheFileURL),
-           let parsed = try? ScheduleParser.shared.parseScheduleJSON(data: data) {
+           let parsed = try? ScheduleParser.shared.parseScheduleJSON(data: data),
+           !parsed.items.isEmpty {
             applyParsedData(parsed)
             return
         }
         
-        // Fallback to bundled sample schedule
-        if let sample = ScheduleParser.shared.loadBundledSampleSchedule() {
+        // 2. Try parsing cached .xlsx if exists in Documents
+        if FileManager.default.fileExists(atPath: cachedXLSXURL.path),
+           let parsed = try? XLSXReader.shared.parseSchedule(xlsxURL: cachedXLSXURL),
+           !parsed.items.isEmpty {
+            applyParsedData(parsed)
+            saveParsedDataToCache(parsed)
+            return
+        }
+        
+        // 3. Fallback to bundled SampleSchedule.json
+        if let sample = ScheduleParser.shared.loadBundledSampleSchedule(), !sample.items.isEmpty {
             applyParsedData(sample)
+            return
+        }
+        
+        // 4. Fallback to bundled schedule.xlsx
+        if let bundleXlsx = Bundle.main.url(forResource: "schedule", withExtension: "xlsx"),
+           let parsed = try? XLSXReader.shared.parseSchedule(xlsxURL: bundleXlsx) {
+            applyParsedData(parsed)
+            saveParsedDataToCache(parsed)
         }
     }
     
@@ -49,30 +79,72 @@ public final class ScheduleRepository: ObservableObject {
         self.teachers = data.teachers.sorted()
         if let lu = ISO8601DateFormatter().date(from: data.lastUpdated) {
             self.lastUpdated = lu
+        } else if let savedDate = userDefaults.object(forKey: Constants.prefLastUpdated) as? Date {
+            self.lastUpdated = savedDate
         } else {
             self.lastUpdated = Date()
         }
     }
     
-    // MARK: - Remote Refresh
+    private func saveParsedDataToCache(_ data: ParsedScheduleData) {
+        if let encoded = try? JSONEncoder().encode(data) {
+            try? encoded.write(to: cacheFileURL, options: .atomic)
+            userDefaults.set(Date(), forKey: Constants.prefLastUpdated)
+        }
+    }
+    
+    // MARK: - Auto-Refresh Logic (Matches Android shouldAutoRefresh)
+    public func shouldAutoRefresh() -> Bool {
+        if allItems.isEmpty { return true }
+        guard let lu = lastUpdated else { return true }
+        let hours = Calendar.current.dateComponents([.hour], from: lu, to: Date()).hour ?? 0
+        return hours >= 24
+    }
+    
+    public func maybeAutoRefresh() async {
+        guard shouldAutoRefresh() else { return }
+        do {
+            try await refreshSchedule()
+        } catch {
+            print("Auto-refresh failed: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Remote Refresh (Downloads & Parses .xlsx from rsatu.ru)
     public func refreshSchedule() async throws {
-        await MainActor.run { self.isUpdating = true }
+        await MainActor.run {
+            self.isUpdating = true
+            self.updateErrorMessage = nil
+        }
         defer {
             Task { @MainActor in self.isUpdating = false }
         }
         
-        let tempCache = FileManager.default.temporaryDirectory.appendingPathComponent(Constants.scheduleCacheFileName)
-        try await NetworkService.shared.fetchScheduleFile(cacheURL: tempCache)
+        // 1. Download schedule.xlsx
+        try await NetworkService.shared.fetchScheduleFile(cacheURL: cachedXLSXURL)
         
-        // In full app with CoreXLSX or server sync, the file is parsed here
-        // If download succeeds, we save to cacheFileURL and update state
-        if let currentData = try? Data(contentsOf: cacheFileURL) {
-            if let parsed = try? ScheduleParser.shared.parseScheduleJSON(data: currentData) {
-                await MainActor.run {
-                    self.applyParsedData(parsed)
-                    self.lastUpdated = Date()
-                }
-            }
+        // 2. Parse downloaded schedule.xlsx
+        let parsed = try XLSXReader.shared.parseSchedule(xlsxURL: cachedXLSXURL)
+        guard !parsed.items.isEmpty else {
+            throw NSError(domain: "ScheduleRepository", code: -1, userInfo: [NSLocalizedDescriptionKey: "Файл расписания пуст или не содержит занятий"])
+        }
+        
+        // 3. Save parsed data to local JSON cache for fast launch
+        saveParsedDataToCache(parsed)
+        
+        // 4. Update memory state on MainActor
+        await MainActor.run {
+            self.applyParsedData(parsed)
+            self.lastUpdated = Date()
+        }
+        
+        // 5. Download transfers.xlsx (optional, failure doesn't block main schedule)
+        let transfersCacheURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Constants.transfersCacheFileName)
+        do {
+            try await NetworkService.shared.fetchTransfersFile(cacheURL: transfersCacheURL)
+        } catch {
+            print("Transfers fetch warning: \(error.localizedDescription)")
         }
     }
     
@@ -82,6 +154,7 @@ public final class ScheduleRepository: ObservableObject {
         guard !clean.isEmpty else { return [] }
         
         let excluded = getExcludedSubjects(for: targetName)
+        let todayStr = DateUtils.isoDateFormatter.string(from: Date())
         
         return allItems.filter { item in
             let match = isGroup
@@ -93,7 +166,7 @@ public final class ScheduleRepository: ObservableObject {
             if excluded.contains(item.subjectName) {
                 copy.isExcluded = true
             }
-            if self.isLessonSkipped(dateString: DateUtils.isoDateFormatter.string(from: Date()), lessonNumber: item.lessonNumber, subject: item.subjectName) {
+            if self.isLessonSkipped(dateString: todayStr, lessonNumber: item.lessonNumber, subject: item.subjectName) {
                 copy.isSkipped = true
             }
             return copy
@@ -141,9 +214,8 @@ public final class ScheduleRepository: ObservableObject {
                 guard item.lessonNumber <= times.count else { continue }
                 let timePair = times[item.lessonNumber - 1]
                 
-                // If today, only consider future lessons
-                if dayOffset == 0 {
-                    if timePair.start <= nowTimeStr { continue }
+                if dayOffset == 0 && timePair.start <= nowTimeStr {
+                    continue
                 }
                 
                 return NextLesson(
@@ -167,7 +239,6 @@ public final class ScheduleRepository: ObservableObject {
            let list = try? JSONDecoder().decode([GroupOrTeacher].self, from: data) {
             self.favorites = list
         } else {
-            // Default sample favorites
             self.favorites = [
                 GroupOrTeacher(name: "ИВБ-24", type: .group, isFavorite: true),
                 GroupOrTeacher(name: "ДТБ-23", type: .group, isFavorite: true),

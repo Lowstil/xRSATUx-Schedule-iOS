@@ -6,7 +6,12 @@ public final class NetworkService: NSObject, URLSessionDelegate {
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
+        config.timeoutIntervalForResource = 90
+        config.httpAdditionalHeaders = [
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 UniSchedule/1.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+        ]
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
     
@@ -15,13 +20,12 @@ public final class NetworkService: NSObject, URLSessionDelegate {
         options: .caseInsensitive
     )
     
-    // MARK: - Certificate Handling
+    // MARK: - Certificate Handling for rsatu.ru
     public func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        // Trust server certificate for rsatu.ru even if intermediate certificate chain is incomplete
         if let host = challenge.protectionSpace.host.lowercased() as String?,
            host.contains("rsatu.ru"),
            let serverTrust = challenge.protectionSpace.serverTrust {
@@ -35,7 +39,10 @@ public final class NetworkService: NSObject, URLSessionDelegate {
     public func discoverFileURL(pageURL: String, hint: String) async -> URL? {
         guard let url = URL(string: pageURL) else { return nil }
         do {
-            let (data, response) = try await session.data(from: url)
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            
+            let (data, response) = try await session.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200,
                   let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1251) else {
                 return nil
@@ -46,14 +53,14 @@ public final class NetworkService: NSObject, URLSessionDelegate {
                 guard let range = Range(match.range(at: 1), in: html) else { continue }
                 let href = String(html[range])
                 if href.lowercased().contains(hint.lowercased()) {
-                    if href.starts(with: "http://") || href.starts(with: "https://") {
-                        return URL(string: href)
-                    } else if href.starts(with: "/") {
-                        return URL(string: "https://www.rsatu.ru" + href)
-                    } else {
-                        return URL(string: "https://www.rsatu.ru/" + href)
-                    }
+                    return resolveURL(pageURL: pageURL, link: href)
                 }
+            }
+            
+            // If hint didn't match, return first .xlsx if any
+            if let firstMatch = matches.first, let range = Range(firstMatch.range(at: 1), in: html) {
+                let href = String(html[range])
+                return resolveURL(pageURL: pageURL, link: href)
             }
         } catch {
             print("Error discovering file URL: \(error.localizedDescription)")
@@ -61,14 +68,31 @@ public final class NetworkService: NSObject, URLSessionDelegate {
         return nil
     }
     
+    private func resolveURL(pageURL: String, link: String) -> URL? {
+        if link.starts(with: "http://") || link.starts(with: "https://") {
+            return URL(string: link)
+        }
+        if let base = URL(string: pageURL), let resolved = URL(string: link, relativeTo: base) {
+            return resolved.absoluteURL
+        }
+        return URL(string: "https://www.rsatu.ru" + (link.starts(with: "/") ? link : "/" + link))
+    }
+    
     // MARK: - Download File
     public func downloadFile(from remoteURL: URL, to destinationURL: URL) async throws {
-        let (tempURL, response) = try await session.download(from: remoteURL)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw NSError(domain: "NetworkService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed HTTP download"])
+        var request = URLRequest(url: remoteURL)
+        request.httpMethod = "GET"
+        
+        let (tempURL, response) = try await session.download(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw NSError(domain: "NetworkService", code: -1, userInfo: [NSLocalizedDescriptionKey: "HTTP статус ошибки при загрузке"])
         }
         
         let fileManager = FileManager.default
+        let dir = destinationURL.deletingLastPathComponent()
+        if !fileManager.fileExists(atPath: dir.path) {
+            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
         if fileManager.fileExists(atPath: destinationURL.path) {
             try fileManager.removeItem(at: destinationURL)
         }

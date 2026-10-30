@@ -38,6 +38,7 @@
 		A00101012B00000100000029 /* SampleSchedule.json in Resources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000029 /* SampleSchedule.json */; };
 		A00101012B00000100000030 /* schedule.xlsx in Resources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000030 /* schedule.xlsx */; };
 		A00101012B00000100000031 /* Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000031 /* Tests.swift */; };
+		A00101012B00000100000032 /* XLSXReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000033 /* XLSXReader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -75,6 +76,7 @@
 		A00102012B00000100000030 /* schedule.xlsx */ = {isa = PBXFileReference; lastKnownFileType = file; path = schedule.xlsx; sourceTree = "<group>"; };
 		A00102012B00000100000031 /* Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests.swift; sourceTree = "<group>"; };
 		A00102012B00000100000032 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A00102012B00000100000033 /* XLSXReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XLSXReader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +155,7 @@
 			children = (
 				A00102012B00000100000009 /* NetworkService.swift */,
 				A00102012B00000100000010 /* ScheduleParser.swift */,
+				A00102012B00000100000033 /* XLSXReader.swift */,
 				A00102012B00000100000011 /* ScheduleRepository.swift */,
 				A00102012B00000100000012 /* NotificationManager.swift */,
 				A00102012B00000100000013 /* HapticsService.swift */,
@@ -350,6 +353,7 @@
 				A00101012B00000100000008 /* ScheduleFilter.swift in Sources */,
 				A00101012B00000100000009 /* NetworkService.swift in Sources */,
 				A00101012B00000100000010 /* ScheduleParser.swift in Sources */,
+				A00101012B00000100000032 /* XLSXReader.swift in Sources */,
 				A00101012B00000100000011 /* ScheduleRepository.swift in Sources */,
 				A00101012B00000100000012 /* NotificationManager.swift in Sources */,
 				A00101012B00000100000013 /* HapticsService.swift in Sources */,
@@ -420,6 +424,10 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lz",
+				);
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -442,6 +450,10 @@
 				GCC_OPTIMIZATION_LEVEL = s;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lz",
+				);
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
