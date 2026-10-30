@@ -469,8 +469,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "UniSchedule/Preview Content";
-				ENABLE_PREVIEWS = YES;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = UniSchedule/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Расписание РГАТУ";
@@ -496,8 +496,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "UniSchedule/Preview Content";
-				ENABLE_PREVIEWS = YES;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = UniSchedule/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Расписание РГАТУ";
@@ -528,7 +528,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/UniSchedule.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/UniSchedule";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/UniSchedule.app/UniSchedule";
 			};
 			name = Debug;
 		};
@@ -544,7 +544,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/UniSchedule.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/UniSchedule";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/UniSchedule.app/UniSchedule";
 			};
 			name = Release;
 		};
