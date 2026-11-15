@@ -38,6 +38,14 @@ public final class DateUtils {
         Calendar.current.startOfDay(for: Date())
     }
     
+    public static func initialScheduleDate(_ date: Date? = Date()) -> Date? {
+        guard let d = date else { return nil }
+        if Calendar.current.component(.weekday, from: d) == 1 {
+            return Calendar.current.date(byAdding: .day, value: 1, to: d) ?? d
+        }
+        return d
+    }
+    
     public static func toScheduleDayOfWeek(date: Date) -> Int {
         let calendar = Calendar.current
         let weekday = calendar.component(.weekday, from: date)

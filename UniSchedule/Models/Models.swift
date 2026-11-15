@@ -201,3 +201,45 @@ public struct ScheduleClockState: Equatable {
         self.stageStatusText = stageStatusText
     }
 }
+
+public struct LessonGap: Identifiable, Hashable {
+    public var id: String
+    public var afterLessonNumber: Int
+    public var beforeLessonNumber: Int
+    public var startTime: String
+    public var endTime: String
+    public var durationMinutes: Int
+    public var formattedDuration: String
+    
+    public init(
+        id: String? = nil,
+        afterLessonNumber: Int,
+        beforeLessonNumber: Int,
+        startTime: String,
+        endTime: String,
+        durationMinutes: Int,
+        formattedDuration: String
+    ) {
+        self.id = id ?? "gap_\(afterLessonNumber)_\(beforeLessonNumber)_\(startTime)"
+        self.afterLessonNumber = afterLessonNumber
+        self.beforeLessonNumber = beforeLessonNumber
+        self.startTime = startTime
+        self.endTime = endTime
+        self.durationMinutes = durationMinutes
+        self.formattedDuration = formattedDuration
+    }
+}
+
+public enum DayScheduleEntry: Identifiable, Hashable {
+    case lesson(ScheduleItem)
+    case gap(LessonGap)
+    
+    public var id: String {
+        switch self {
+        case .lesson(let item):
+            return "lesson_\(item.id.uuidString)"
+        case .gap(let gap):
+            return "gap_\(gap.id)"
+        }
+    }
+}

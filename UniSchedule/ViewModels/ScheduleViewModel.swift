@@ -7,22 +7,32 @@ public final class ScheduleViewModel: ObservableObject {
     @Published public var selectedName: String = ""
     @Published public var isGroup: Bool = true
     @Published public var selectedWeekNumber: Int = 1
-    @Published public var selectedDayOfWeek: Int = 1
+    @Published public var selectedDayOfWeek: Int = 1 {
+        didSet {
+            updateLiveClock()
+        }
+    }
     
     @Published public var weekSchedule: WeekSchedule? = nil
     @Published public var clockState: ScheduleClockState = ScheduleClockState()
     @Published public var nextUpcomingLesson: NextLesson? = nil
     @Published public var isLoading: Bool = false
     @Published public var errorMessage: String? = nil
+    @Published public var skipLimitPercent: Int
+    @Published public var activeScheduleDiff: ScheduleDiffResult? = nil
+    @Published public var showScheduleDiffSheet: Bool = false
     
     private let repository = ScheduleRepository.shared
     private let scheduleFilter = ScheduleFilter()
-    private var weekCalculator: WeekCalculator
+    public private(set) var weekCalculator: WeekCalculator
     private var cancellables = Set<AnyCancellable>()
+    private var lastLiveNotifSyncKey: String? = nil
     
     public init() {
-        let semesterStart = SemesterManager.getDefaultSemesterStart()
+        let semesterStart = SemesterManager.loadSemesterStart()
         self.weekCalculator = WeekCalculator(semesterStartDate: semesterStart)
+        self.skipLimitPercent = AttendanceManager.shared.skipLimitPercent
+        self.activeScheduleDiff = repository.lastScheduleDiff
         
         // Restore user defaults
         let savedType = UserDefaults.standard.string(forKey: Constants.prefSelectionType) ?? "group"
@@ -30,12 +40,13 @@ public final class ScheduleViewModel: ObservableObject {
         self.isGroup = (savedType == "group")
         self.selectedName = savedName
         
-        // Default to current week & day
-        let currentWeek = weekCalculator.currentWeekNumber
-        self.selectedWeekNumber = (currentWeek > 0) ? currentWeek : 1
+        // Default to current week & day (auto-advances Sunday -> Monday)
+        let targetDate = DateUtils.initialScheduleDate(Date()) ?? Date()
+        let targetWeek = weekCalculator.getWeekNumber(for: targetDate)
+        self.selectedWeekNumber = (targetWeek > 0) ? targetWeek : weekCalculator.currentWeekNumber
         
-        let todayDow = DateUtils.toScheduleDayOfWeek(date: Date())
-        self.selectedDayOfWeek = (todayDow >= 1 && todayDow <= 6) ? todayDow : 1
+        let targetDow = DateUtils.toScheduleDayOfWeek(date: targetDate)
+        self.selectedDayOfWeek = (targetDow >= 1 && targetDow <= 6) ? targetDow : 1
         
         loadSchedule()
         startLiveTimer()
@@ -51,12 +62,40 @@ public final class ScheduleViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         
+        repository.$lastScheduleDiff
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] diff in
+                guard let self else { return }
+                self.activeScheduleDiff = diff
+                if let diff, !diff.isEmpty {
+                    self.showScheduleDiffSheet = true
+                }
+            }
+            .store(in: &cancellables)
+        
         NotificationCenter.default.publisher(for: NSNotification.Name("AttendanceChanged"))
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.loadSchedule()
             }
             .store(in: &cancellables)
+        
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.lastLiveNotifSyncKey = nil
+                self.syncLiveLessonNotifications()
+            }
+            .store(in: &cancellables)
+    }
+    
+    public var weekDays: [DaySchedule] {
+        weekSchedule?.days ?? []
+    }
+    
+    public func entries(for day: DaySchedule) -> [DayScheduleEntry] {
+        ScheduleFilter.buildDayScheduleEntries(for: day.lessons, dayOfWeek: day.dayOfWeek)
     }
     
     public var currentDaySchedule: DaySchedule? {
@@ -94,14 +133,15 @@ public final class ScheduleViewModel: ObservableObject {
             isGroup: isGroup
         )
         
-        updateLiveClock()
-        updateNextLesson()
+        lastLiveNotifSyncKey = nil
+        updateClockAndNextLesson()
         exportWidgetData()
     }
     
     public func refresh() async {
         isLoading = true
         errorMessage = nil
+        weekCalculator = WeekCalculator(semesterStartDate: SemesterManager.loadSemesterStart())
         do {
             try await repository.refreshSchedule()
             loadSchedule()
@@ -117,6 +157,7 @@ public final class ScheduleViewModel: ObservableObject {
     public func previousWeek() {
         if selectedWeekNumber > 1 {
             selectedWeekNumber -= 1
+            selectedDayOfWeek = 1
             loadSchedule()
             HapticsService.shared.selection()
         }
@@ -125,18 +166,34 @@ public final class ScheduleViewModel: ObservableObject {
     public func nextWeek() {
         if selectedWeekNumber < SemesterManager.totalWeeks {
             selectedWeekNumber += 1
+            selectedDayOfWeek = 1
             loadSchedule()
             HapticsService.shared.selection()
         }
     }
     
     public func resetToCurrentWeekAndDay() {
-        let cw = weekCalculator.currentWeekNumber
-        self.selectedWeekNumber = (cw > 0) ? cw : 1
-        let dow = DateUtils.toScheduleDayOfWeek(date: Date())
+        weekCalculator = WeekCalculator(semesterStartDate: SemesterManager.loadSemesterStart())
+        let targetDate = DateUtils.initialScheduleDate(Date()) ?? Date()
+        let targetWeek = weekCalculator.getWeekNumber(for: targetDate)
+        self.selectedWeekNumber = (targetWeek > 0) ? targetWeek : weekCalculator.currentWeekNumber
+        let dow = DateUtils.toScheduleDayOfWeek(date: targetDate)
         self.selectedDayOfWeek = (dow >= 1 && dow <= 6) ? dow : 1
         loadSchedule()
         HapticsService.shared.selection()
+    }
+    
+    public func setSkipLimitPercent(_ pct: Int) {
+        AttendanceManager.shared.skipLimitPercent = pct
+        self.skipLimitPercent = AttendanceManager.shared.skipLimitPercent
+        loadSchedule()
+        HapticsService.shared.selection()
+    }
+    
+    public func dismissScheduleDiff() {
+        showScheduleDiffSheet = false
+        repository.clearScheduleDiff()
+        activeScheduleDiff = nil
     }
     
     public func selectDay(_ dow: Int) {
@@ -199,9 +256,15 @@ public final class ScheduleViewModel: ObservableObject {
         Timer.publish(every: 15, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
-                self?.updateLiveClock()
+                self?.updateClockAndNextLesson()
             }
             .store(in: &cancellables)
+    }
+    
+    public func updateClockAndNextLesson() {
+        updateLiveClock()
+        updateNextLesson()
+        syncLiveLessonNotifications()
     }
     
     private func updateLiveClock() {
@@ -220,6 +283,55 @@ public final class ScheduleViewModel: ObservableObject {
             isGroup: isGroup,
             weekCalculator: weekCalculator
         )
+    }
+    
+    private func syncLiveLessonNotifications() {
+        let enabled = (UserDefaults.standard.object(forKey: Constants.prefLiveLessonNotifEnabled) as? Bool) ?? true
+        let now = Date()
+        let todayStr = DateUtils.isoDateFormatter.string(from: now)
+        let lessons = enabled ? todayActiveLessons(for: now) : []
+        let sig = lessons.map {
+            "\($0.lessonNumber):\($0.subjectName):\($0.room):\($0.isCancelled):\($0.isExcluded):\($0.isSkipped)"
+        }.joined(separator: "|")
+        let syncKey = "\(enabled)#\(todayStr)#\(selectedName)#\(isGroup)#\(sig)"
+        guard syncKey != lastLiveNotifSyncKey else { return }
+        lastLiveNotifSyncKey = syncKey
+        
+        NotificationManager.shared.updateLiveLessonNotifications(
+            lessons: lessons,
+            date: now,
+            enabled: enabled
+        )
+    }
+    
+    private func todayActiveLessons(for date: Date) -> [ScheduleItem] {
+        guard !selectedName.isEmpty,
+              !HolidayChecker.shared.isDayOff(date: date) else {
+            return []
+        }
+        let dow = DateUtils.toScheduleDayOfWeek(date: date)
+        guard dow >= 1 && dow <= 6 else { return [] }
+        
+        if let todayDay = weekDays.first(where: { Calendar.current.isDateInToday($0.date) }) {
+            return todayDay.lessons
+        }
+        
+        let weekNum = weekCalculator.getWeekNumber(for: date)
+        guard weekNum > 0, let weekType = weekCalculator.getWeekType(for: date) else {
+            return []
+        }
+        let items = repository.getSchedule(for: selectedName, isGroup: isGroup)
+        let monday = weekCalculator.getMondayOfWeek(weekNumber: weekNum) ?? DateUtils.mondayOfWeek(for: date)
+        let day = scheduleFilter.buildWeekSchedule(
+            allItems: items,
+            weekNumber: weekNum,
+            weekType: weekType,
+            mondayOfWeek: monday,
+            allTransfers: [],
+            targetName: selectedName,
+            isGroup: isGroup
+        ).days.first(where: { $0.dayOfWeek == dow })
+        return day?.lessons ?? []
     }
     
     private func exportWidgetData() {

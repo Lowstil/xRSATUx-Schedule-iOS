@@ -54,10 +54,33 @@ public final class SettingsViewModel: ObservableObject {
         }
     }
     
+    @Published public var reducedTransparency: Bool {
+        didSet {
+            UserDefaults.standard.set(reducedTransparency, forKey: Constants.prefReducedTransparency)
+        }
+    }
+    
+    @Published public var liveLessonNotifEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(liveLessonNotifEnabled, forKey: Constants.prefLiveLessonNotifEnabled)
+            if !liveLessonNotifEnabled {
+                NotificationManager.shared.cancelLiveLessonNotifications()
+            } else {
+                Task {
+                    _ = await NotificationManager.shared.requestAuthorization()
+                }
+            }
+        }
+    }
+    
     @Published public var isRefreshing: Bool = false
     @Published public var cacheStatusMessage: String = ""
     
     private let repository = ScheduleRepository.shared
+    
+    public var hasScheduleDiff: Bool {
+        ScheduleRepository.shared.lastScheduleDiff?.isEmpty == false
+    }
     
     public init() {
         let savedTheme = UserDefaults.standard.string(forKey: Constants.prefThemeMode) ?? ThemeMode.system.rawValue
@@ -67,6 +90,8 @@ public final class SettingsViewModel: ObservableObject {
         let savedMin = UserDefaults.standard.integer(forKey: Constants.prefReminderMinutesBefore)
         self.reminderMinutesBefore = (savedMin > 0) ? savedMin : 15
         self.morningDigestEnabled = UserDefaults.standard.bool(forKey: Constants.prefMorningDigestEnabled)
+        self.reducedTransparency = UserDefaults.standard.bool(forKey: Constants.prefReducedTransparency)
+        self.liveLessonNotifEnabled = (UserDefaults.standard.object(forKey: Constants.prefLiveLessonNotifEnabled) as? Bool) ?? true
         
         if let savedDateStr = UserDefaults.standard.string(forKey: Constants.prefSemesterStart),
            let date = DateUtils.isoDateFormatter.date(from: savedDateStr) {

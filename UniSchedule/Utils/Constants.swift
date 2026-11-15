@@ -76,6 +76,10 @@ public enum Constants {
     public static let prefAttendedLessons = "pref_attended_lessons"
     public static let prefAttendanceManualPrefix = "att_manual_"
     public static let prefExcludedSubjectsPrefix = "pref_excluded_subjects_"
+    public static let prefAttendanceSkipLimitPct = "attendance_skip_limit_pct"
+    public static let prefReducedTransparency = "reduced_transparency"
+    public static let prefLiveLessonNotifEnabled = "live_lesson_notif_enabled"
+    public static let prefScheduleDiffData = "schedule_diff_data"
     
     // MARK: - App Group for Widgets
     public static let appGroupIdentifier = "group.com.university.schedule"
