@@ -69,7 +69,7 @@ public final class ScheduleFilter {
             item.dayOfWeek == dayOfWeek &&
             item.weekType.lowercased() == weekType.lowercased() &&
             item.isActiveOnWeek(weekNumber)
-        }
+        }.sorted { $0.lessonNumber < $1.lessonNumber }
     }
     
     public func filterTransfers(
@@ -160,6 +160,91 @@ public final class ScheduleFilter {
             }
         }
         
-        return result
+        return result.sorted { $0.lessonNumber < $1.lessonNumber }
+    }
+    
+    // MARK: - Lesson Windows / Gaps
+    public static func computeGaps(for lessons: [ScheduleItem], dayOfWeek: Int) -> [LessonGap] {
+        let active = lessons
+            .filter { !$0.isCancelled && !$0.isExcluded && !$0.isSkipped }
+            .sorted { $0.lessonNumber < $1.lessonNumber }
+        guard active.count >= 2 else { return [] }
+        
+        let bellTimes = Constants.getLessonTimes(dayOfWeek: dayOfWeek)
+        var gaps: [LessonGap] = []
+        
+        for idx in 1..<active.count {
+            let prev = active[idx - 1]
+            let curr = active[idx]
+            
+            guard curr.lessonNumber - prev.lessonNumber >= 2,
+                  prev.lessonNumber >= 1, prev.lessonNumber <= bellTimes.count,
+                  curr.lessonNumber >= 1, curr.lessonNumber <= bellTimes.count else {
+                continue
+            }
+            
+            let prevEnd = bellTimes[prev.lessonNumber - 1].end
+            let currStart = bellTimes[curr.lessonNumber - 1].start
+            
+            guard let prevEndMin = parseMinutes(prevEnd),
+                  let currStartMin = parseMinutes(currStart) else {
+                continue
+            }
+            
+            let diff = currStartMin - prevEndMin
+            guard diff > 0 else { continue }
+            
+            let hours = diff / 60
+            let mins = diff % 60
+            let formatted: String
+            if hours > 0 && mins > 0 {
+                formatted = "\(hours) ч \(mins) мин"
+            } else if hours > 0 {
+                formatted = "\(hours) ч"
+            } else {
+                formatted = "\(mins) мин"
+            }
+            
+            gaps.append(
+                LessonGap(
+                    afterLessonNumber: prev.lessonNumber,
+                    beforeLessonNumber: curr.lessonNumber,
+                    startTime: prevEnd,
+                    endTime: currStart,
+                    durationMinutes: diff,
+                    formattedDuration: formatted
+                )
+            )
+        }
+        
+        return gaps
+    }
+    
+    public static func buildDayScheduleEntries(for lessons: [ScheduleItem], dayOfWeek: Int) -> [DayScheduleEntry] {
+        let sorted = lessons.sorted { $0.lessonNumber < $1.lessonNumber }
+        let gaps = computeGaps(for: sorted, dayOfWeek: dayOfWeek)
+        var gapsByBeforeLesson: [Int: LessonGap] = [:]
+        for gap in gaps {
+            if gapsByBeforeLesson[gap.beforeLessonNumber] == nil {
+                gapsByBeforeLesson[gap.beforeLessonNumber] = gap
+            }
+        }
+        
+        var entries: [DayScheduleEntry] = []
+        for item in sorted {
+            if let gap = gapsByBeforeLesson.removeValue(forKey: item.lessonNumber) {
+                entries.append(.gap(gap))
+            }
+            entries.append(.lesson(item))
+        }
+        return entries
+    }
+    
+    private static func parseMinutes(_ timeStr: String) -> Int? {
+        let parts = timeStr.split(separator: ":")
+        guard parts.count == 2,
+              let h = Int(parts[0]),
+              let m = Int(parts[1]) else { return nil }
+        return h * 60 + m
     }
 }

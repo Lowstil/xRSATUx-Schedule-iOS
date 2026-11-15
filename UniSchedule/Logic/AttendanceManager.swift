@@ -1,8 +1,28 @@
 import Foundation
 
+public enum BudgetHealth: String, Codable, Equatable {
+    case safe
+    case warning
+    case exceeded
+}
+
 public final class AttendanceManager {
     public static let shared = AttendanceManager()
     public static let defaultWarningThreshold = 3
+    public static let validSkipLimits = [20, 25, 30]
+    
+    private let userDefaults: UserDefaults
+    
+    public var skipLimitPercent: Int {
+        get {
+            let stored = userDefaults.integer(forKey: Constants.prefAttendanceSkipLimitPct)
+            return Self.validSkipLimits.contains(stored) ? stored : 30
+        }
+        set {
+            let validated = Self.validSkipLimits.contains(newValue) ? newValue : 30
+            userDefaults.set(validated, forKey: Constants.prefAttendanceSkipLimitPct)
+        }
+    }
     
     public struct SubjectAttendance: Identifiable, Equatable {
         public var id: String { subjectName }
@@ -11,6 +31,10 @@ public final class AttendanceManager {
         public var missedCount: Int
         public var attendedCount: Int
         public var attendancePercent: Int
+        public var skipPercent: Int
+        public var maxAllowedSkips: Int
+        public var remainingBudget: Int
+        public var budgetHealth: BudgetHealth
         
         public var hasWarning: Bool {
             missedCount >= AttendanceManager.defaultWarningThreshold
@@ -21,13 +45,21 @@ public final class AttendanceManager {
             totalPlanned: Int = 0,
             missedCount: Int = 0,
             attendedCount: Int = 0,
-            attendancePercent: Int = 100
+            attendancePercent: Int = 100,
+            skipPercent: Int = 0,
+            maxAllowedSkips: Int = 0,
+            remainingBudget: Int = 0,
+            budgetHealth: BudgetHealth = .safe
         ) {
             self.subjectName = subjectName
             self.totalPlanned = totalPlanned
             self.missedCount = missedCount
             self.attendedCount = attendedCount
             self.attendancePercent = attendancePercent
+            self.skipPercent = skipPercent
+            self.maxAllowedSkips = maxAllowedSkips
+            self.remainingBudget = remainingBudget
+            self.budgetHealth = budgetHealth
         }
     }
     
@@ -36,17 +68,32 @@ public final class AttendanceManager {
         public var missedCount: Int = 0
         public var attendedCount: Int = 0
         public var attendancePercent: Int = 100
+        public var skipPercent: Int = 0
+        public var maxAllowedSkips: Int = 0
+        public var remainingBudget: Int = 0
+        public var budgetHealth: BudgetHealth = .safe
+        public var limitPercent: Int = 30
         
         public init(
             totalPlanned: Int = 0,
             missedCount: Int = 0,
             attendedCount: Int = 0,
-            attendancePercent: Int = 100
+            attendancePercent: Int = 100,
+            skipPercent: Int = 0,
+            maxAllowedSkips: Int = 0,
+            remainingBudget: Int = 0,
+            budgetHealth: BudgetHealth = .safe,
+            limitPercent: Int = 30
         ) {
             self.totalPlanned = totalPlanned
             self.missedCount = missedCount
             self.attendedCount = attendedCount
             self.attendancePercent = attendancePercent
+            self.skipPercent = skipPercent
+            self.maxAllowedSkips = maxAllowedSkips
+            self.remainingBudget = remainingBudget
+            self.budgetHealth = budgetHealth
+            self.limitPercent = limitPercent
         }
     }
     
@@ -60,9 +107,11 @@ public final class AttendanceManager {
         }
     }
     
-    public init() {}
+    public init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
     
-    // MARK: - Russian Skips Plural Formatting
+    // MARK: - Russian Skips & Lessons Plural Formatting
     public static func formatSkips(_ count: Int) -> String {
         let rem100 = count % 100
         let rem10 = count % 10
@@ -78,6 +127,64 @@ public final class AttendanceManager {
         return "\(count) Н-ок"
     }
     
+    public static func formatLessonsCount(_ count: Int) -> String {
+        let absCount = abs(count)
+        let rem100 = absCount % 100
+        let rem10 = absCount % 10
+        if rem100 >= 11 && rem100 <= 19 {
+            return "\(count) пар"
+        }
+        if rem10 == 1 {
+            return "\(count) пара"
+        }
+        if rem10 >= 2 && rem10 <= 4 {
+            return "\(count) пары"
+        }
+        return "\(count) пар"
+    }
+    
+    // MARK: - Skip Budget Math
+    public static func computeSkipPercent(missed: Int, planned: Int) -> Int {
+        guard planned > 0, missed > 0 else { return 0 }
+        return Int((Double(missed) * 100.0 / Double(planned)).rounded())
+    }
+    
+    public static func computeMaxAllowedSkips(planned: Int, limitPct: Int) -> Int {
+        guard planned > 0, limitPct > 0 else { return 0 }
+        return Int(floor(Double(planned) * Double(limitPct) / 100.0))
+    }
+    
+    public static func computeRemainingSkipBudget(missed: Int, planned: Int, limitPct: Int) -> Int {
+        computeMaxAllowedSkips(planned: planned, limitPct: limitPct) - max(0, missed)
+    }
+    
+    public static func evaluateBudgetHealth(missed: Int, planned: Int, limitPct: Int) -> BudgetHealth {
+        guard planned > 0 else { return .safe }
+        let remaining = computeRemainingSkipBudget(missed: missed, planned: planned, limitPct: limitPct)
+        if remaining < 0 { return .exceeded }
+        if remaining == 1 || (remaining == 0 && missed > 0) { return .warning }
+        return .safe
+    }
+    
+    public static func formatBudgetStatus(missed: Int, planned: Int, limitPct: Int) -> String {
+        guard planned > 0 else { return "Нет проведённых пар" }
+        let skipPct = computeSkipPercent(missed: missed, planned: planned)
+        let remaining = computeRemainingSkipBudget(missed: missed, planned: planned, limitPct: limitPct)
+        if remaining < 0 {
+            return "Лимит превышен! (\(skipPct)%)"
+        }
+        if remaining == 1 {
+            return "Последний запас: 1 пара"
+        }
+        if remaining == 0 && missed <= 0 {
+            return "Пропусков нет · запас 0 пар"
+        }
+        if remaining == 0 && missed > 0 {
+            return "Запас исчерпан (\(skipPct)%)"
+        }
+        return "Можно пропустить ещё \(formatLessonsCount(remaining))"
+    }
+    
     // MARK: - Calculate Attendance Report
     public func calculateReport(
         groupName: String,
@@ -86,25 +193,32 @@ public final class AttendanceManager {
         holidayChecker: HolidayChecker = .shared,
         today: Date = Date()
     ) -> AttendanceReport {
+        let limitPct = skipLimitPercent
         guard !groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return AttendanceReport(overall: OverallAttendance(), subjects: [])
+            return AttendanceReport(overall: OverallAttendance(limitPercent: limitPct), subjects: [])
         }
         
         let allItems = repository.getSchedule(for: groupName, isGroup: true)
         let excluded = repository.getExcludedSubjects(for: groupName)
         
         let calendar = Calendar.current
-        let semesterStart = SemesterManager.loadSemesterStart()
+        let semesterStart = calendar.startOfDay(for: weekCalculator.semesterStartDate)
         let todayStart = calendar.startOfDay(for: today)
         
         var statsMap: [String: SubjectAttendance] = [:]
         
-        // Scan each day of the semester up to 18 weeks from start
+        // Scan Mon–Sat from semesterStart up to min(semesterEnd, today + 14 days) across weeks 1...18
         let totalDays = SemesterManager.totalWeeks * 7
+        guard let semesterEnd = calendar.date(byAdding: .day, value: totalDays - 1, to: semesterStart),
+              let horizon = calendar.date(byAdding: .day, value: 14, to: todayStart) else {
+            return AttendanceReport(overall: OverallAttendance(limitPercent: limitPct), subjects: [])
+        }
+        let scanEnd = min(semesterEnd, horizon)
         
         for dayOffset in 0..<totalDays {
             guard let cursor = calendar.date(byAdding: .day, value: dayOffset, to: semesterStart) else { continue }
             let cursorStart = calendar.startOfDay(for: cursor)
+            if cursorStart > scanEnd { break }
             
             // Skip official holidays and Sundays
             if holidayChecker.isDayOff(date: cursor) { continue }
@@ -112,7 +226,7 @@ public final class AttendanceManager {
             guard dow >= 1 && dow <= 6 else { continue }
             
             let weekNum = weekCalculator.getWeekNumber(for: cursor)
-            guard weekNum > 0 else { continue }
+            guard weekNum >= 1 && weekNum <= SemesterManager.totalWeeks else { continue }
             let weekType = weekCalculator.isEvenWeek(weekNum) ? Constants.weekTypeEven : Constants.weekTypeOdd
             
             let isFuture = cursorStart > todayStart
@@ -147,7 +261,7 @@ public final class AttendanceManager {
             }
         }
         
-        // Apply manual adjustments and calculate percentages
+        // Apply manual adjustments and calculate percentages & skip budget
         var totalPlannedAll = 0
         var totalMissedAll = 0
         var updatedSubjects: [SubjectAttendance] = []
@@ -162,6 +276,10 @@ public final class AttendanceManager {
             sa.attendancePercent = sa.totalPlanned > 0
                 ? Int(round(Float(sa.attendedCount) * 100.0 / Float(sa.totalPlanned)))
                 : 100
+            sa.skipPercent = Self.computeSkipPercent(missed: sa.missedCount, planned: sa.totalPlanned)
+            sa.maxAllowedSkips = Self.computeMaxAllowedSkips(planned: sa.totalPlanned, limitPct: limitPct)
+            sa.remainingBudget = Self.computeRemainingSkipBudget(missed: sa.missedCount, planned: sa.totalPlanned, limitPct: limitPct)
+            sa.budgetHealth = Self.evaluateBudgetHealth(missed: sa.missedCount, planned: sa.totalPlanned, limitPct: limitPct)
             
             totalPlannedAll += sa.totalPlanned
             totalMissedAll += sa.missedCount
@@ -185,7 +303,12 @@ public final class AttendanceManager {
             totalPlanned: totalPlannedAll,
             missedCount: totalMissedAll,
             attendedCount: attendedAll,
-            attendancePercent: percentAll
+            attendancePercent: percentAll,
+            skipPercent: Self.computeSkipPercent(missed: totalMissedAll, planned: totalPlannedAll),
+            maxAllowedSkips: Self.computeMaxAllowedSkips(planned: totalPlannedAll, limitPct: limitPct),
+            remainingBudget: Self.computeRemainingSkipBudget(missed: totalMissedAll, planned: totalPlannedAll, limitPct: limitPct),
+            budgetHealth: Self.evaluateBudgetHealth(missed: totalMissedAll, planned: totalPlannedAll, limitPct: limitPct),
+            limitPercent: limitPct
         )
         
         return AttendanceReport(overall: overall, subjects: updatedSubjects)

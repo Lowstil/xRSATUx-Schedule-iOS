@@ -12,6 +12,7 @@ public final class ScheduleRepository: ObservableObject {
     @Published public private(set) var lastUpdated: Date? = nil
     @Published public private(set) var isUpdating: Bool = false
     @Published public private(set) var updateErrorMessage: String? = nil
+    @Published public private(set) var lastScheduleDiff: ScheduleDiffResult? = nil
     
     private let userDefaults: UserDefaults
     private let scheduleFilter = ScheduleFilter()
@@ -32,6 +33,7 @@ public final class ScheduleRepository: ObservableObject {
         loadFromCacheOrBundle()
         loadFavorites()
         loadNotes()
+        loadScheduleDiff()
         
         // Auto-refresh in background if due (similar to SplashActivity / MainActivity in Android)
         Task {
@@ -132,10 +134,29 @@ public final class ScheduleRepository: ObservableObject {
         // 3. Save parsed data to local JSON cache for fast launch
         saveParsedDataToCache(parsed)
         
-        // 4. Update memory state on MainActor
+        // 4. Snapshot old target items, update memory state, and compute diff on MainActor
         await MainActor.run {
+            let savedName = (self.userDefaults.string(forKey: Constants.prefSelectionName) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let savedIsGroup = (self.userDefaults.string(forKey: Constants.prefSelectionType) ?? "group") == "group"
+            let shouldComputeDiff = !self.allItems.isEmpty && !savedName.isEmpty
+            let oldTargetItems = shouldComputeDiff ? self.getSchedule(for: savedName, isGroup: savedIsGroup) : []
+            
             self.applyParsedData(parsed)
             self.lastUpdated = Date()
+            
+            if shouldComputeDiff {
+                let newTargetItems = self.getSchedule(for: savedName, isGroup: savedIsGroup)
+                let diff = ScheduleDiffComputer.computeDiff(
+                    oldItems: oldTargetItems,
+                    newItems: newTargetItems,
+                    targetName: savedName,
+                    isGroup: savedIsGroup
+                )
+                if !diff.isEmpty {
+                    self.saveScheduleDiff(diff)
+                }
+            }
         }
         
         // 5. Download transfers.xlsx (optional, failure doesn't block main schedule)
@@ -145,6 +166,36 @@ public final class ScheduleRepository: ObservableObject {
             try await NetworkService.shared.fetchTransfersFile(cacheURL: transfersCacheURL)
         } catch {
             print("Transfers fetch warning: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Schedule Diff Persistence
+    private func loadScheduleDiff() {
+        guard let data = userDefaults.data(forKey: Constants.prefScheduleDiffData),
+              let decoded = try? JSONDecoder().decode(ScheduleDiffResult.self, from: data),
+              !decoded.isEmpty else {
+            self.lastScheduleDiff = nil
+            return
+        }
+        self.lastScheduleDiff = decoded
+    }
+    
+    private func saveScheduleDiff(_ diff: ScheduleDiffResult) {
+        guard !diff.isEmpty else { return }
+        if let encoded = try? JSONEncoder().encode(diff) {
+            userDefaults.set(encoded, forKey: Constants.prefScheduleDiffData)
+        }
+        self.lastScheduleDiff = diff
+    }
+    
+    public func clearScheduleDiff() {
+        userDefaults.removeObject(forKey: Constants.prefScheduleDiffData)
+        if Thread.isMainThread {
+            self.lastScheduleDiff = nil
+        } else {
+            DispatchQueue.main.async {
+                self.lastScheduleDiff = nil
+            }
         }
     }
     
@@ -181,12 +232,19 @@ public final class ScheduleRepository: ObservableObject {
         fromDate: Date = Date(),
         maxDaysAhead: Int = 14
     ) -> NextLesson? {
-        let items = getSchedule(for: targetName, isGroup: isGroup)
-        guard !items.isEmpty else { return nil }
+        let clean = targetName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !clean.isEmpty else { return nil }
+        
+        let excluded = getExcludedSubjects(for: targetName)
+        let targetItems = allItems.filter { item in
+            isGroup
+                ? item.groupName.lowercased() == clean
+                : item.teacherName.lowercased().contains(clean)
+        }
+        guard !targetItems.isEmpty else { return nil }
         
         let calendar = Calendar.current
-        let timeFormatter = DateUtils.timeFormatter
-        let nowTimeStr = timeFormatter.string(from: fromDate)
+        let nowTimeStr = DateUtils.timeFormatter.string(from: fromDate)
         
         for dayOffset in 0...maxDaysAhead {
             guard let checkDate = calendar.date(byAdding: .day, value: dayOffset, to: fromDate) else { continue }
@@ -196,24 +254,24 @@ public final class ScheduleRepository: ObservableObject {
             guard dow >= 1 && dow <= 6 else { continue }
             
             let weekNum = weekCalculator.getWeekNumber(for: checkDate)
-            guard weekNum > 0 else { continue }
-            let weekType = weekCalculator.isEvenWeek(weekNum) ? Constants.weekTypeEven : Constants.weekTypeOdd
+            guard weekNum > 0, let weekType = weekCalculator.getWeekType(for: checkDate) else { continue }
             let checkDateStr = DateUtils.isoDateFormatter.string(from: checkDate)
             
-            let dayLessons = items.filter { item in
-                let skipped = self.isLessonSkipped(dateString: checkDateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
-                return item.dayOfWeek == dow &&
-                    item.weekType.lowercased() == weekType.lowercased() &&
-                    item.isActiveOnWeek(weekNum) &&
-                    !item.isCancelled &&
-                    !item.isExcluded &&
-                    !skipped
+            let dayLessons = targetItems.filter { item in
+                guard item.dayOfWeek == dow,
+                      item.weekType.lowercased() == weekType.lowercased(),
+                      item.isActiveOnWeek(weekNum),
+                      !item.isCancelled,
+                      !excluded.contains(item.subjectName) else {
+                    return false
+                }
+                return !self.isLessonSkipped(dateString: checkDateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
             }.sorted(by: { $0.lessonNumber < $1.lessonNumber })
             
             let times = Constants.getLessonTimes(dayOfWeek: dow)
             
             for item in dayLessons {
-                guard item.lessonNumber <= times.count else { continue }
+                guard item.lessonNumber >= 1 && item.lessonNumber <= times.count else { continue }
                 let timePair = times[item.lessonNumber - 1]
                 
                 if dayOffset == 0 && timePair.start <= nowTimeStr {
@@ -233,6 +291,115 @@ public final class ScheduleRepository: ObservableObject {
             }
         }
         return nil
+    }
+    
+    // MARK: - Teacher & Room Finder Queries
+    public func getAllTeacherNames() -> [String] {
+        var seen: [String: String] = [:]
+        let separators = CharacterSet(charactersIn: ",;/")
+        
+        let ingest: (String) -> Void = { raw in
+            for part in raw.components(separatedBy: separators) {
+                let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, trimmed != "-", trimmed != "—" else { continue }
+                let key = trimmed.lowercased()
+                if seen[key] == nil {
+                    seen[key] = trimmed
+                }
+            }
+        }
+        
+        for t in teachers {
+            ingest(t)
+        }
+        for item in allItems {
+            ingest(item.teacherName)
+        }
+        
+        return seen.values.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+    
+    public func getLessonsForTeacher(_ teacher: String, weekType: String, dayOfWeek: Int) -> [ScheduleItem] {
+        let clean = teacher.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !clean.isEmpty else { return [] }
+        
+        let wt = weekType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var seenSignatures = Set<String>()
+        
+        return allItems.filter { item in
+            !item.isCancelled &&
+            item.dayOfWeek == dayOfWeek &&
+            item.weekType.lowercased() == wt &&
+            item.teacherName.lowercased().contains(clean)
+        }
+        .sorted { a, b in
+            if a.lessonNumber != b.lessonNumber { return a.lessonNumber < b.lessonNumber }
+            return a.groupName.localizedCaseInsensitiveCompare(b.groupName) == .orderedAscending
+        }
+        .filter { item in
+            let sig = "\(item.lessonNumber)#\(item.subjectName.lowercased())#\(item.groupName.lowercased())#\(item.room.lowercased())"
+            return seenSignatures.insert(sig).inserted
+        }
+    }
+    
+    public func getAllDistinctRooms(buildingFilter: String? = nil) -> [String] {
+        var seen: [String: String] = [:]
+        
+        for item in allItems {
+            let room = item.room.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard isPhysicalRoom(room), matchesBuildingFilter(room, filter: buildingFilter) else { continue }
+            let key = room.lowercased()
+            if seen[key] == nil {
+                seen[key] = room
+            }
+        }
+        
+        return seen.values.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+    
+    public func getFreeRooms(weekType: String, dayOfWeek: Int, lessonNumber: Int, buildingFilter: String? = nil) -> [String] {
+        let distinctRooms = getAllDistinctRooms(buildingFilter: buildingFilter)
+        let wt = weekType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        var occupied = Set<String>()
+        for item in allItems {
+            guard !item.isCancelled,
+                  item.dayOfWeek == dayOfWeek,
+                  item.lessonNumber == lessonNumber,
+                  item.weekType.lowercased() == wt else {
+                continue
+            }
+            let room = item.room.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !room.isEmpty {
+                occupied.insert(room.lowercased())
+            }
+        }
+        
+        return distinctRooms.filter { !occupied.contains($0.lowercased()) }
+    }
+    
+    private func isPhysicalRoom(_ room: String) -> Bool {
+        guard !room.isEmpty, room != "-", room != "—" else { return false }
+        let low = room.lowercased()
+        let onlineMarkers = ["онлайн", "online", "saby", "дистант", "сдо"]
+        return !onlineMarkers.contains(where: { low.contains($0) })
+    }
+    
+    private func matchesBuildingFilter(_ room: String, filter: String?) -> Bool {
+        guard let rawFilter = filter?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawFilter.isEmpty,
+              rawFilter.caseInsensitiveCompare("Все") != .orderedSame else {
+            return true
+        }
+        let upperRoom = room.uppercased()
+        let upperFilter = rawFilter.uppercased()
+        if upperFilter == "Г" {
+            return upperRoom.hasPrefix("Г")
+        }
+        return upperRoom.hasPrefix("\(upperFilter)-") ||
+            upperRoom.hasPrefix("\(upperFilter) ") ||
+            upperRoom == upperFilter ||
+            upperRoom.hasPrefix(upperFilter)
     }
     
     // MARK: - Favorites
