@@ -47,10 +47,16 @@ extension Color {
     
     // Liquid Glass accent tokens (Android 3.0 parity)
     static let uniLiveEmerald = Color(hex: "#10B981")
+    static let uniLiveDarkInk = Color(hex: "#0B1220")
     static let uniNextSky = Color(hex: "#38BDF8")
     static let uniWindowAmber = Color(hex: "#F59E0B")
     static let uniAmber = Color(hex: "#F59E0B")
     static let uniPurple = Color(hex: "#8B5CF6")
+    static let uniCustomPurple = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(red: 0.655, green: 0.545, blue: 0.980, alpha: 1.0) // #A78BFA
+            : UIColor(red: 0.486, green: 0.227, blue: 0.929, alpha: 1.0) // #7C3AED
+    })
     static let uniRose = Color(hex: "#F43F5E")
     
     // Adaptive Liquid Glass surface & stroke tokens

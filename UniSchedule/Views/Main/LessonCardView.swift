@@ -10,9 +10,14 @@ public struct LessonCardView: View {
     public let onOpenNote: () -> Void
     public let onOpenAttendance: () -> Void
     public let onToggleSkipped: () -> Void
+    public let onTapTeacher: (String) -> Void
+    public let onTapRoom: (String) -> Void
+    public let onDeleteCustom: () -> Void
     
     @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
+    @Environment(\.colorScheme) private var colorScheme
     @State private var livePulse = false
+    @State private var showDeleteCustomAlert = false
     
     public init(
         item: ScheduleItem,
@@ -23,7 +28,10 @@ public struct LessonCardView: View {
         warningText: String? = nil,
         onOpenNote: @escaping () -> Void,
         onOpenAttendance: @escaping () -> Void = {},
-        onToggleSkipped: @escaping () -> Void
+        onToggleSkipped: @escaping () -> Void,
+        onTapTeacher: @escaping (String) -> Void = { _ in },
+        onTapRoom: @escaping (String) -> Void = { _ in },
+        onDeleteCustom: @escaping () -> Void = {}
     ) {
         self.item = item
         self.clockState = clockState
@@ -34,6 +42,9 @@ public struct LessonCardView: View {
         self.onOpenNote = onOpenNote
         self.onOpenAttendance = onOpenAttendance
         self.onToggleSkipped = onToggleSkipped
+        self.onTapTeacher = onTapTeacher
+        self.onTapRoom = onTapRoom
+        self.onDeleteCustom = onDeleteCustom
     }
     
     private var isToday: Bool {
@@ -63,12 +74,23 @@ public struct LessonCardView: View {
     }
     
     private var typeColor: Color {
-        lessonTypeColor(for: item.lessonType)
+        if item.isCustom {
+            return customBadgeColor
+        }
+        return lessonTypeColor(for: item.lessonType)
+    }
+    
+    private var customBadgeColor: Color {
+        colorScheme == .dark ? Color(hex: "#A78BFA") : Color(hex: "#7C3AED")
+    }
+    
+    private var canTapTeacher: Bool {
+        isGroupView && !item.teacherName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Top row: lesson number, time, state pills, type & room
+            // Top row: lesson number, time, state pills, type/custom & room
             HStack(alignment: .center, spacing: 6) {
                 Text("\(item.lessonNumber) пара")
                     .font(.subheadline.bold())
@@ -89,20 +111,30 @@ public struct LessonCardView: View {
                 
                 Spacer(minLength: 4)
                 
-                LessonTypeBadge(type: item.lessonType)
+                if item.isCustom {
+                    customBadge
+                } else if !item.lessonType.isEmpty {
+                    LessonTypeBadge(type: item.lessonType)
+                }
                 
                 if !item.room.isEmpty {
-                    HStack(spacing: 3) {
-                        Image(systemName: item.isOnline ? "video.fill" : "door.left.hand.open")
-                            .font(.system(size: 9, weight: .semibold))
-                        Text(item.room)
-                            .font(.caption2.bold())
-                            .lineLimit(1)
+                    Button(action: {
+                        HapticsService.shared.selection()
+                        onTapRoom(item.room)
+                    }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: item.isOnline ? "video.fill" : "door.left.hand.open")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text(item.room)
+                                .font(.caption2.bold())
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(.primary.opacity(0.85))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .liquidGlassCapsule(reducedTransparency: reducedTransparency)
                     }
-                    .foregroundColor(.primary.opacity(0.85))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .liquidGlassCapsule(reducedTransparency: reducedTransparency)
+                    .buttonStyle(.plain)
                 }
             }
             
@@ -133,22 +165,30 @@ public struct LessonCardView: View {
                 .fixedSize(horizontal: false, vertical: true)
             
             // Teacher or Group
-            HStack(spacing: 6) {
-                Image(systemName: isGroupView ? "person.fill" : "person.2.fill")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text(isGroupView ? (item.teacherName.isEmpty ? "Преподаватель не указан" : item.teacherName) : item.groupName)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
+            if !item.isCustom || !item.teacherName.isEmpty || !item.groupName.isEmpty {
+                teacherOrGroupRow
+            }
+            
+            // Custom event note/comment
+            if item.isCustom, let customComment = item.transferNote, !customComment.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.bubble")
+                        .font(.caption)
+                        .foregroundColor(customBadgeColor)
+                    Text(customComment)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             
             // Status badges
-            statusBadgesRow
+            if !item.isCustom {
+                statusBadgesRow
+            }
             
             // Attendance Warning Banner
-            if let warning = warningText, !item.isCancelled, !item.isExcluded, !item.isSkipped {
+            if !item.isCustom, let warning = warningText, !item.isCancelled, !item.isExcluded, !item.isSkipped {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption2)
@@ -168,13 +208,19 @@ public struct LessonCardView: View {
                         Image(systemName: note.isCompleted ? "checkmark.circle.fill" : "note.text")
                             .foregroundColor(note.isCompleted ? .uniLiveEmerald : .uniNextSky)
                         
-                        Text(note.noteText)
+                        Text(note.noteText.isEmpty && note.imagePath != nil ? "Фотография" : note.noteText)
                             .font(.caption)
                             .foregroundColor(note.isCompleted ? .secondary : .primary)
                             .strikethrough(note.isCompleted)
                             .lineLimit(1)
                         
                         Spacer()
+                        
+                        if note.imagePath != nil {
+                            Image(systemName: "photo")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                         
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -206,38 +252,114 @@ public struct LessonCardView: View {
         }
         .onLongPressGesture {
             HapticsService.shared.impact(.medium)
-            onOpenAttendance()
+            if item.isCustom {
+                showDeleteCustomAlert = true
+            } else {
+                onOpenAttendance()
+            }
         }
         .contextMenu {
-            Button(action: onOpenAttendance) {
-                Label("Отметить посещаемость", systemImage: "checkmark.circle.badge.questionmark")
+            if item.isCustom {
+                Button(action: onOpenNote) {
+                    Label("Добавить заметку / ДЗ", systemImage: "square.and.pencil")
+                }
+                
+                Button(role: .destructive, action: {
+                    showDeleteCustomAlert = true
+                }) {
+                    Label("Удалить личное событие", systemImage: "trash")
+                }
+            } else {
+                Button(action: onOpenAttendance) {
+                    Label("Отметить посещаемость", systemImage: "checkmark.circle.badge.questionmark")
+                }
+                
+                Button(action: onOpenNote) {
+                    Label("Добавить заметку / ДЗ", systemImage: "square.and.pencil")
+                }
+                
+                Button(action: onToggleSkipped) {
+                    Label(item.isSkipped ? "Сбросить Н-ку" : "Поставить Н-ку (Пропуск)", systemImage: "figure.walk.motion")
+                }
             }
-            
-            Button(action: onOpenNote) {
-                Label("Добавить заметку / ДЗ", systemImage: "square.and.pencil")
+        }
+        .alert("Удалить личное событие?", isPresented: $showDeleteCustomAlert) {
+            Button("Удалить", role: .destructive) {
+                onDeleteCustom()
             }
-            
-            Button(action: onToggleSkipped) {
-                Label(item.isSkipped ? "Сбросить Н-ку" : "Поставить Н-ку (Пропуск)", systemImage: "figure.walk.motion")
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Событие «\(item.subjectName)» будет удалено из расписания.")
+        }
+    }
+    
+    @ViewBuilder
+    private var teacherOrGroupRow: some View {
+        let labelText = isGroupView
+            ? (item.teacherName.isEmpty ? "Преподаватель не указан" : item.teacherName)
+            : item.groupName
+        
+        if canTapTeacher {
+            Button(action: {
+                HapticsService.shared.selection()
+                onTapTeacher(item.teacherName)
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.fill")
+                        .font(.caption)
+                        .foregroundColor(.uniNextSky)
+                    
+                    Text(labelText)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary.opacity(0.65))
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: isGroupView ? "person.fill" : "person.2.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text(labelText)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
             }
         }
     }
     
+    private var customBadge: some View {
+        Text("Личное")
+            .font(.caption2.bold())
+            .foregroundColor(customBadgeColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .liquidGlassCapsule(tint: customBadgeColor, reducedTransparency: reducedTransparency)
+    }
+    
     private var liveBadge: some View {
-        HStack(spacing: 4) {
+        let inkColor: Color = (colorScheme == .dark) ? .uniLiveDarkInk : .white
+        return HStack(spacing: 4) {
             Circle()
-                .fill(Color.uniLiveEmerald)
+                .fill(inkColor)
                 .frame(width: 6, height: 6)
                 .scaleEffect(livePulse ? 1.3 : 0.85)
-                .opacity(livePulse ? 1.0 : 0.45)
+                .opacity(livePulse ? 1.0 : 0.55)
                 .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: livePulse)
             Text("LIVE")
                 .font(.system(size: 10, weight: .heavy))
-                .foregroundColor(.uniLiveEmerald)
+                .foregroundColor(inkColor)
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .liquidGlassCapsule(tint: .uniLiveEmerald, reducedTransparency: reducedTransparency)
+        .background(Capsule().fill(Color.uniLiveEmerald))
+        .shadow(color: Color.uniLiveEmerald.opacity(0.35), radius: 4, x: 0, y: 1)
         .onAppear { livePulse = true }
     }
     

@@ -373,4 +373,298 @@ final class UniScheduleTests: XCTestCase {
         XCTAssertTrue(exported.contains("Иванов И.И."))
         XCTAssertFalse(exported.contains("Отменённый предмет"))
     }
+
+    // MARK: - 3.1 – 3.3.1 Tests
+
+    func testSemesterManagerWindowAndDefaults() {
+        let jan29 = DateUtils.isoDateFormatter.date(from: "2026-01-29")!
+        let jan30 = DateUtils.isoDateFormatter.date(from: "2026-01-30")!
+        let aug24 = DateUtils.isoDateFormatter.date(from: "2026-08-24")!
+        let aug25 = DateUtils.isoDateFormatter.date(from: "2026-08-25")!
+
+        XCTAssertEqual(SemesterManager.getCurrentWindowSemester(today: jan29), .fall)
+        XCTAssertEqual(SemesterManager.getCurrentWindowSemester(today: jan30), .spring)
+        XCTAssertEqual(SemesterManager.getCurrentWindowSemester(today: aug24), .spring)
+        XCTAssertEqual(SemesterManager.getCurrentWindowSemester(today: aug25), .fall)
+
+        // Monday normalization for getDefaultStart(for:refDate:)
+        let nov16 = DateUtils.isoDateFormatter.date(from: "2026-11-16")!
+        let fallStart = SemesterManager.getDefaultStart(for: .fall, refDate: nov16)
+        XCTAssertEqual(DateUtils.isoDateFormatter.string(from: fallStart), "2026-08-31")
+        XCTAssertEqual(DateUtils.toScheduleDayOfWeek(date: fallStart), 1)
+
+        let springStart2027 = SemesterManager.getDefaultStart(for: .spring, refDate: nov16)
+        XCTAssertEqual(DateUtils.isoDateFormatter.string(from: springStart2027), "2027-02-01")
+        XCTAssertEqual(DateUtils.toScheduleDayOfWeek(date: springStart2027), 1)
+
+        // 2026-02-01 is Sunday -> normalized Monday is 2026-01-26
+        let feb15 = DateUtils.isoDateFormatter.date(from: "2026-02-15")!
+        let springStart2026 = SemesterManager.getDefaultStart(for: .spring, refDate: feb15)
+        XCTAssertEqual(DateUtils.isoDateFormatter.string(from: springStart2026), "2026-01-26")
+        XCTAssertEqual(DateUtils.toScheduleDayOfWeek(date: springStart2026), 1)
+
+        XCTAssertEqual(
+            SemesterManager.describeSemester(.fall, startDate: fallStart),
+            "Осенний семестр 2026/2027 уч.г., начался 31.08.2026"
+        )
+        XCTAssertEqual(
+            SemesterManager.describeSemester(.spring, startDate: springStart2027),
+            "Весенний семестр 2026/2027 уч.г., начался 01.02.2027"
+        )
+    }
+
+    func testCustomEventMatchingAndWeekScheduleMerge() {
+        let wedOdd = DateUtils.isoDateFormatter.date(from: "2026-09-02")!
+        let monOdd = DateUtils.isoDateFormatter.date(from: "2026-08-31")!
+        let monEven = DateUtils.isoDateFormatter.date(from: "2026-09-07")!
+
+        // 1. Specific date event
+        let oneTime = CustomEvent(
+            targetName: "ИВБ-24",
+            isGroup: true,
+            dateIso: "2026-09-02",
+            dayOfWeek: 3,
+            weekType: CustomEventWeekFilter.both.rawValue,
+            lessonNumber: 2,
+            subjectName: "Консультация",
+            room: "Г-417",
+            note: "Перед зачётом"
+        )
+        XCTAssertFalse(oneTime.isRecurring)
+        XCTAssertTrue(oneTime.matchesDate(wedOdd, dayOfWeek: 3, weekType: Constants.weekTypeOdd))
+        XCTAssertFalse(oneTime.matchesDate(monOdd, dayOfWeek: 1, weekType: Constants.weekTypeOdd))
+
+        // 2. Recurring event (odd / both)
+        let recurringOdd = CustomEvent(
+            targetName: "ИВБ-24",
+            isGroup: true,
+            dateIso: nil,
+            dayOfWeek: 1,
+            weekType: CustomEventWeekFilter.odd.rawValue,
+            lessonNumber: 4,
+            subjectName: "Проектная работа"
+        )
+        XCTAssertTrue(recurringOdd.isRecurring)
+        XCTAssertTrue(recurringOdd.matchesDate(monOdd, dayOfWeek: 1, weekType: Constants.weekTypeOdd))
+        XCTAssertFalse(recurringOdd.matchesDate(monEven, dayOfWeek: 1, weekType: Constants.weekTypeEven))
+
+        let recurringBoth = CustomEvent(
+            targetName: "ИВБ-24",
+            isGroup: true,
+            dateIso: "",
+            dayOfWeek: 1,
+            weekType: CustomEventWeekFilter.both.rawValue,
+            lessonNumber: 1,
+            subjectName: "Кураторский час"
+        )
+        XCTAssertTrue(recurringBoth.isRecurring)
+        XCTAssertTrue(recurringBoth.matchesDate(monOdd, dayOfWeek: 1, weekType: Constants.weekTypeOdd))
+        XCTAssertTrue(recurringBoth.matchesDate(monEven, dayOfWeek: 1, weekType: Constants.weekTypeEven))
+
+        // toScheduleItem conversion
+        let customItem = oneTime.toScheduleItem(dayOfWeek: 3, isGroup: true)
+        XCTAssertTrue(customItem.isCustom)
+        XCTAssertEqual(customItem.customEventId, oneTime.id)
+        XCTAssertEqual(customItem.groupName, "ИВБ-24")
+        XCTAssertEqual(customItem.transferNote, "Перед зачётом")
+
+        let teacherEvent = CustomEvent(
+            targetName: "Иванов И.И.",
+            isGroup: false,
+            dateIso: nil,
+            dayOfWeek: 2,
+            weekType: "both",
+            lessonNumber: 3,
+            subjectName: "Методический семинар"
+        )
+        let teacherItem = teacherEvent.toScheduleItem(dayOfWeek: 2, isGroup: false)
+        XCTAssertEqual(teacherItem.teacherName, "Иванов И.И.")
+
+        // Merging into ScheduleFilter.buildWeekSchedule
+        let otherGroupEvent = CustomEvent(
+            targetName: "АВБ-24",
+            isGroup: true,
+            dateIso: nil,
+            dayOfWeek: 1,
+            weekType: "both",
+            lessonNumber: 2,
+            subjectName: "Чужое событие"
+        )
+        let baseLesson = ScheduleItem(
+            weekType: Constants.weekTypeOdd,
+            dayOfWeek: 1,
+            lessonNumber: 2,
+            groupName: "ИВБ-24",
+            teacherName: "Петров П.П.",
+            subjectName: "Алгоритмы",
+            lessonType: "Л",
+            room: "1-108"
+        )
+        let filter = ScheduleFilter(holidayChecker: .shared)
+        let week1 = filter.buildWeekSchedule(
+            allItems: [baseLesson],
+            weekNumber: 1,
+            weekType: Constants.weekTypeOdd,
+            mondayOfWeek: monOdd,
+            customEvents: [recurringOdd, recurringBoth, otherGroupEvent],
+            targetName: "ИВБ-24",
+            isGroup: true
+        )
+        let mondayLessons = week1.days.first { $0.dayOfWeek == 1 }?.lessons ?? []
+        XCTAssertEqual(mondayLessons.map(\.lessonNumber), [1, 2, 4])
+        XCTAssertTrue(mondayLessons[0].isCustom)
+        XCTAssertFalse(mondayLessons[1].isCustom)
+        XCTAssertTrue(mondayLessons[2].isCustom)
+
+        // Recurring events are excluded outside semester weeks 1...18
+        let outOfRangeWeek = filter.buildWeekSchedule(
+            allItems: [],
+            weekNumber: 19,
+            weekType: Constants.weekTypeOdd,
+            mondayOfWeek: monOdd,
+            customEvents: [recurringOdd, oneTime],
+            targetName: "ИВБ-24",
+            isGroup: true
+        )
+        XCTAssertTrue((outOfRangeWeek.days.first { $0.dayOfWeek == 1 }?.lessons ?? []).isEmpty)
+        XCTAssertEqual(outOfRangeWeek.days.first { $0.dayOfWeek == 3 }?.lessons.count, 1)
+    }
+
+    func testRoomFormatterBuildingMeta() {
+        let g = RoomFormatter.resolveBuildingMeta(from: "Г-417")
+        XCTAssertEqual(g.title, "Главный корпус")
+        XCTAssertEqual(g.buildingFilter, "Г")
+        XCTAssertTrue(g.hasPhysicalRooms)
+        XCTAssertTrue(g.address.contains("Пушкина"))
+
+        let b1 = RoomFormatter.resolveBuildingMeta(from: "1-108")
+        XCTAssertEqual(b1.title, "Первый корпус")
+        XCTAssertEqual(b1.buildingFilter, "1")
+        XCTAssertTrue(b1.hasPhysicalRooms)
+        XCTAssertTrue(b1.address.contains("Плеханова, д. 2"))
+
+        let b2 = RoomFormatter.resolveBuildingMeta(from: "2-214")
+        XCTAssertEqual(b2.title, "Второй корпус")
+        XCTAssertEqual(b2.buildingFilter, "2")
+        XCTAssertTrue(b2.hasPhysicalRooms)
+        XCTAssertTrue(b2.address.contains("Луначарского"))
+
+        let b3 = RoomFormatter.resolveBuildingMeta(from: "3-105")
+        XCTAssertEqual(b3.title, "Третий корпус")
+        XCTAssertEqual(b3.buildingFilter, "3")
+        XCTAssertTrue(b3.hasPhysicalRooms)
+        XCTAssertTrue(b3.address.contains("Плеханова, д. 4"))
+
+        let online = RoomFormatter.resolveBuildingMeta(from: "Онлайн")
+        XCTAssertEqual(online.title, "Онлайн")
+        XCTAssertNil(online.buildingFilter)
+        XCTAssertFalse(online.hasPhysicalRooms)
+
+        let gym = RoomFormatter.resolveBuildingMeta(from: "Большой спортзал")
+        XCTAssertEqual(gym.title, "Большой спортзал")
+        XCTAssertNil(gym.buildingFilter)
+        XCTAssertFalse(gym.hasPhysicalRooms)
+
+        let boiling = RoomFormatter.resolveBuildingMeta(from: "Точка кипения")
+        XCTAssertEqual(boiling.title, "Точка кипения")
+        XCTAssertNil(boiling.buildingFilter)
+        XCTAssertFalse(boiling.hasPhysicalRooms)
+    }
+
+    func testScheduleFilterBuildDayComparison() {
+        let mon = DateUtils.isoDateFormatter.date(from: "2026-08-31")!
+        let g1L1 = ScheduleItem(weekType: "odd", dayOfWeek: 1, lessonNumber: 1, groupName: "ИВБ-24", teacherName: "А", subjectName: "Физика", lessonType: "Л", room: "Г-100")
+        let g1L2 = ScheduleItem(weekType: "odd", dayOfWeek: 1, lessonNumber: 2, groupName: "ИВБ-24", teacherName: "Б", subjectName: "Математика", lessonType: "П", room: "1-201")
+        let g2L2 = ScheduleItem(weekType: "odd", dayOfWeek: 1, lessonNumber: 2, groupName: "АВБ-24", teacherName: "В", subjectName: "Химия", lessonType: "ЛР", room: "2-104")
+        let g2L3 = ScheduleItem(weekType: "odd", dayOfWeek: 1, lessonNumber: 3, groupName: "АВБ-24", teacherName: "Г", subjectName: "История", lessonType: "П", room: "3-105")
+        let g2L4Cancelled = ScheduleItem(weekType: "odd", dayOfWeek: 1, lessonNumber: 4, groupName: "АВБ-24", teacherName: "Д", subjectName: "Отмена", lessonType: "Л", room: "Г-101", isCancelled: true)
+        let g2L5Excluded = ScheduleItem(weekType: "odd", dayOfWeek: 1, lessonNumber: 5, groupName: "АВБ-24", teacherName: "Е", subjectName: "Перезачёт", lessonType: "П", room: "Г-102", isExcluded: true)
+
+        let w1 = WeekSchedule(weekNumber: 1, isEven: false, days: [DaySchedule(dayOfWeek: 1, date: mon, lessons: [g1L1, g1L2])])
+        let w2 = WeekSchedule(weekNumber: 1, isEven: false, days: [DaySchedule(dayOfWeek: 1, date: mon, lessons: [g2L2, g2L3, g2L4Cancelled, g2L5Excluded])])
+
+        let result = ScheduleFilter.buildDayComparison(
+            group1: "ИВБ-24",
+            group2: "АВБ-24",
+            week1: w1,
+            week2: w2,
+            semester: .fall,
+            weekNumber: 1,
+            dayOfWeek: 1
+        )
+
+        XCTAssertEqual(result.slots.count, 7)
+        XCTAssertEqual(result.slots[0].kind, .oneBusy)
+        XCTAssertEqual(result.slots[1].kind, .bothBusy)
+        XCTAssertEqual(result.slots[2].kind, .oneBusy)
+        XCTAssertEqual(result.slots[3].kind, .commonWindow)
+        XCTAssertEqual(result.slots[4].kind, .commonWindow)
+        XCTAssertEqual(result.slots[5].kind, .commonWindow)
+        XCTAssertEqual(result.slots[6].kind, .commonWindow)
+        XCTAssertEqual(result.commonWindowsCount, 4)
+        XCTAssertEqual(result.bothBusyCount, 1)
+        XCTAssertEqual(result.oneBusyCount, 2)
+        XCTAssertEqual(result.summaryText, "ПН · общих окон: 4 · заняты оба: 1 · одна группа: 2")
+    }
+
+    func testLessonNoteAndWidgetPayloadCodableCompatibility() throws {
+        let note = LessonNote(
+            dateString: "2026-11-16",
+            lessonNumber: 2,
+            subjectName: "Базы данных",
+            noteText: "Подготовить ER-диаграмму",
+            imagePath: "note_photos/sample.jpg",
+            isCompleted: true
+        )
+        let encodedNote = try JSONEncoder().encode(note)
+        let decodedNote = try JSONDecoder().decode(LessonNote.self, from: encodedNote)
+        XCTAssertEqual(decodedNote.imagePath, "note_photos/sample.jpg")
+        XCTAssertEqual(decodedNote.isCompleted, true)
+        XCTAssertEqual(decodedNote.subjectName, "Базы данных")
+
+        // Backward compatibility when decoding legacy JSON without imagePath
+        let legacyNoteJSON = """
+        {"dateString":"2026-11-16","lessonNumber":1,"subjectName":"Физика","noteText":"ДЗ 1"}
+        """.data(using: .utf8)!
+        let decodedLegacyNote = try JSONDecoder().decode(LessonNote.self, from: legacyNoteJSON)
+        XCTAssertNil(decodedLegacyNote.imagePath)
+        XCTAssertFalse(decodedLegacyNote.isCompleted)
+        XCTAssertEqual(decodedLegacyNote.lessonNumber, 1)
+
+        // WidgetSchedulePayload preview Codable round-trip & legacy fallback
+        let payload = WidgetSchedulePayload(
+            targetName: "ИВБ-24",
+            isGroup: true,
+            dateString: "2026-11-17",
+            isDayOff: false,
+            holidayName: nil,
+            lessons: [
+                WidgetLessonData(
+                    lessonNumber: 1,
+                    timeLabel: "08:30–10:05",
+                    subjectName: "Математика",
+                    room: "Г-417",
+                    lessonType: "Л",
+                    teacherOrGroup: "Иванов И.И."
+                )
+            ],
+            isPreview: true,
+            previewLabel: "Завтра · ВТ",
+            semesterId: "spring"
+        )
+        let encodedPayload = try JSONEncoder().encode(payload)
+        let decodedPayload = try JSONDecoder().decode(WidgetSchedulePayload.self, from: encodedPayload)
+        XCTAssertTrue(decodedPayload.isPreview)
+        XCTAssertEqual(decodedPayload.previewLabel, "Завтра · ВТ")
+        XCTAssertEqual(decodedPayload.semesterId, "spring")
+        XCTAssertEqual(decodedPayload.lessons.count, 1)
+
+        let legacyPayloadJSON = """
+        {"targetName":"ИВБ-24","isGroup":true,"dateString":"2026-11-16","isDayOff":false,"lessons":[]}
+        """.data(using: .utf8)!
+        let decodedLegacyPayload = try JSONDecoder().decode(WidgetSchedulePayload.self, from: legacyPayloadJSON)
+        XCTAssertFalse(decodedLegacyPayload.isPreview)
+        XCTAssertNil(decodedLegacyPayload.previewLabel)
+        XCTAssertEqual(decodedLegacyPayload.semesterId, "fall")
+    }
 }

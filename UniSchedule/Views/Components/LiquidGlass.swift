@@ -467,3 +467,75 @@ public extension View {
         ))
     }
 }
+
+// MARK: - Unpublished Semester Card
+
+public struct UnpublishedSemesterCardView: View {
+    public let semester: SemesterType
+    public let onCheckNow: () -> Void
+
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
+
+    public init(semester: SemesterType, onCheckNow: @escaping () -> Void) {
+        self.semester = semester
+        self.onCheckNow = onCheckNow
+    }
+
+    private var titleText: String {
+        switch semester {
+        case .spring:
+            return "Расписание на весенний семестр ещё не опубликовано"
+        case .fall:
+            return "Расписание на осенний семестр ещё не опубликовано"
+        }
+    }
+
+    private var subtitleText: String {
+        switch semester {
+        case .spring:
+            return "Оно появится автоматически после 30 января, как только вуз выложит новый файл на сайте."
+        case .fall:
+            return "Оно появится автоматически после 25 августа, как только вуз выложит новый файл на сайте."
+        }
+    }
+
+    public var body: some View {
+        VStack(spacing: 14) {
+            Text("📅")
+                .font(.system(size: 46))
+
+            Text(titleText)
+                .font(.headline)
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.center)
+
+            Text(subtitleText)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: {
+                HapticsService.shared.selection()
+                onCheckNow()
+            }) {
+                HStack(spacing: 7) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.subheadline.bold())
+                    Text("Проверить сейчас")
+                        .font(.subheadline.bold())
+                }
+                .foregroundColor(.uniNextSky)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .liquidGlassCapsule(tint: .uniNextSky, reducedTransparency: reducedTransparency)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 20)
+        .liquidGlassCard(cornerRadius: 22, state: .normal, reducedTransparency: reducedTransparency)
+    }
+}

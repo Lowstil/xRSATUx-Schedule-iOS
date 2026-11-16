@@ -57,13 +57,32 @@ public final class NotificationManager {
         let triggerComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: triggerDate)
         let trigger = UNCalendarNotificationTrigger(dateMatching: triggerComponents, repeats: false)
         
-        let identifier = "lesson_reminder_\(lesson.date)_\(lesson.lessonNumber)"
+        let isoDate = DateUtils.isoDateFormatter.string(from: lesson.date)
+        let identifier = "lesson_reminder_\(isoDate)_\(lesson.lessonNumber)"
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
         
         UNUserNotificationCenter.current().add(request)
     }
     
     // MARK: - Morning Digest (07:30)
+    public func scheduleMorningDigest(lessons: [ScheduleItem], date: Date = Date()) {
+        let active = lessons
+            .filter { !$0.isCancelled && !$0.isExcluded && !$0.isSkipped }
+            .sorted { $0.lessonNumber < $1.lessonNumber }
+        let dow = DateUtils.toScheduleDayOfWeek(date: date)
+        let bellTimes = (dow >= 1 && dow <= 6) ? Constants.getLessonTimes(dayOfWeek: dow) : Constants.timesWeekday
+
+        let firstTime: String
+        if let first = active.first,
+           first.lessonNumber >= 1,
+           first.lessonNumber <= bellTimes.count {
+            firstTime = bellTimes[first.lessonNumber - 1].start
+        } else {
+            firstTime = ""
+        }
+        scheduleMorningDigest(firstLessonTime: firstTime, totalLessonsCount: active.count)
+    }
+
     public func scheduleMorningDigest(firstLessonTime: String, totalLessonsCount: Int) {
         let content = UNMutableNotificationContent()
         content.title = "🎓 Расписание на сегодня"
@@ -93,6 +112,12 @@ public final class NotificationManager {
                 center.removePendingNotificationRequests(withIdentifiers: ids)
             }
         }
+        center.getDeliveredNotifications { notifications in
+            let ids = notifications.map { $0.request.identifier }.filter { $0.hasPrefix(self.liveLessonPrefix) }
+            if !ids.isEmpty {
+                center.removeDeliveredNotifications(withIdentifiers: ids)
+            }
+        }
     }
     
     public func updateLiveLessonNotifications(lessons: [ScheduleItem], date: Date, enabled: Bool) {
@@ -100,7 +125,8 @@ public final class NotificationManager {
             .filter { !$0.isCancelled && !$0.isExcluded && !$0.isSkipped }
             .sorted { $0.lessonNumber < $1.lessonNumber }
         
-        guard enabled, !activeLessons.isEmpty else {
+        let calendar = Calendar.current
+        guard enabled, !activeLessons.isEmpty, calendar.isDateInToday(date) else {
             cancelLiveLessonNotifications()
             return
         }
@@ -112,22 +138,19 @@ public final class NotificationManager {
         }
         
         let bellTimes = Constants.getLessonTimes(dayOfWeek: dow)
-        let calendar = Calendar.current
         let now = Date()
         let dateStr = DateUtils.isoDateFormatter.string(from: date)
         let baseComponents = calendar.dateComponents([.year, .month, .day], from: date)
         
-        var pendingRequests: [UNNotificationRequest] = []
-        
+        // Only schedule/keep live alerts when an active lesson is currently in progress (start <= now <= end).
+        var currentActive: (item: ScheduleItem, start: Date, end: Date)? = nil
         for item in activeLessons {
             guard item.lessonNumber >= 1 && item.lessonNumber <= bellTimes.count else { continue }
             let pair = bellTimes[item.lessonNumber - 1]
-            
             guard let startParts = parseTime(pair.start),
                   let endParts = parseTime(pair.end) else {
                 continue
             }
-            
             var startComp = baseComponents
             startComp.hour = startParts.hour
             startComp.minute = startParts.minute
@@ -141,59 +164,59 @@ public final class NotificationManager {
                 continue
             }
             
-            let roomLabel = item.room.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "Без аудитории"
-                : "Ауд. \(item.room)"
-            
-            // Stage 1: Lesson Start
-            if lessonStart > now {
+            if lessonStart <= now && now <= lessonEnd {
+                currentActive = (item, lessonStart, lessonEnd)
+                break
+            }
+        }
+        
+        guard let active = currentActive else {
+            cancelLiveLessonNotifications()
+            return
+        }
+        
+        let item = active.item
+        let lessonStart = active.start
+        let lessonEnd = active.end
+        let roomLabel = item.room.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Без аудитории"
+            : "Ауд. \(item.room)"
+        
+        var pendingRequests: [UNNotificationRequest] = []
+        
+        // Stage 2 & 3 for standard 95-minute pairs (45m + 5m break + 45m)
+        if lessonEnd.timeIntervalSince(lessonStart) >= 50 * 60 {
+            if let breakDate = calendar.date(byAdding: .minute, value: 45, to: lessonStart),
+               breakDate > now {
                 let content = UNMutableNotificationContent()
-                content.title = "\(item.lessonNumber) пара началась: \(item.subjectName)"
-                content.body = "1-я половина 45 мин · \(roomLabel) (\(item.lessonType))"
+                content.title = "Перерыв 5 мин · \(item.subjectName)"
+                content.body = "Перерыв в \(item.lessonNumber)-й паре · до 2-й половины 5 мин"
                 content.sound = .default
                 pendingRequests.append(
                     makeLiveRequest(
-                        id: "\(liveLessonPrefix)\(dateStr)_\(item.lessonNumber)_start",
-                        triggerDate: lessonStart,
+                        id: "\(liveLessonPrefix)\(dateStr)_\(item.lessonNumber)_break",
+                        triggerDate: breakDate,
                         content: content,
                         calendar: calendar
                     )
                 )
             }
             
-            // Stage 2 & 3 for standard 95-minute pairs (45m + 5m break + 45m)
-            if lessonEnd.timeIntervalSince(lessonStart) >= 50 * 60 {
-                if let breakDate = calendar.date(byAdding: .minute, value: 45, to: lessonStart),
-                   breakDate > now {
-                    let content = UNMutableNotificationContent()
-                    content.title = "Перерыв 5 мин · \(item.subjectName)"
-                    content.body = "Перерыв в \(item.lessonNumber)-й паре · до 2-й половины 5 мин"
-                    content.sound = .default
-                    pendingRequests.append(
-                        makeLiveRequest(
-                            id: "\(liveLessonPrefix)\(dateStr)_\(item.lessonNumber)_break",
-                            triggerDate: breakDate,
-                            content: content,
-                            calendar: calendar
-                        )
+            if let secondHalfDate = calendar.date(byAdding: .minute, value: 50, to: lessonStart),
+               secondHalfDate > now {
+                let content = UNMutableNotificationContent()
+                content.title = "2-я половина \(item.lessonNumber)-й пары: \(item.subjectName)"
+                let typePart = item.lessonType.isEmpty ? "" : " (\(item.lessonType))"
+                content.body = "Осталось 45 мин · \(roomLabel)\(typePart)"
+                content.sound = .default
+                pendingRequests.append(
+                    makeLiveRequest(
+                        id: "\(liveLessonPrefix)\(dateStr)_\(item.lessonNumber)_half2",
+                        triggerDate: secondHalfDate,
+                        content: content,
+                        calendar: calendar
                     )
-                }
-                
-                if let secondHalfDate = calendar.date(byAdding: .minute, value: 50, to: lessonStart),
-                   secondHalfDate > now {
-                    let content = UNMutableNotificationContent()
-                    content.title = "2-я половина \(item.lessonNumber)-й пары: \(item.subjectName)"
-                    content.body = "Осталось 45 мин · \(roomLabel)"
-                    content.sound = .default
-                    pendingRequests.append(
-                        makeLiveRequest(
-                            id: "\(liveLessonPrefix)\(dateStr)_\(item.lessonNumber)_half2",
-                            triggerDate: secondHalfDate,
-                            content: content,
-                            calendar: calendar
-                        )
-                    )
-                }
+                )
             }
         }
         

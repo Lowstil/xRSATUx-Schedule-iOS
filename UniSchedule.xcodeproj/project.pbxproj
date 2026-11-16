@@ -44,6 +44,13 @@
 		A00101012B00000100000036 /* ScheduleExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000036 /* ScheduleExporter.swift */; };
 		A00101012B00000100000037 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000037 /* LiquidGlass.swift */; };
 		A00101012B00000100000038 /* FinderDiffDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000038 /* FinderDiffDialogs.swift */; };
+		A00101012B00000100000039 /* CustomEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000039 /* CustomEvent.swift */; };
+		A00101012B00000100000040 /* BuildingInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000040 /* BuildingInfo.swift */; };
+		A00101012B00000100000041 /* FloatingGlassDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000041 /* FloatingGlassDockView.swift */; };
+		A00101012B00000100000042 /* HomeworkHubSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000042 /* HomeworkHubSheet.swift */; };
+		A00101012B00000100000043 /* CustomEventSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000043 /* CustomEventSheet.swift */; };
+		A00101012B00000100000044 /* CompareScheduleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000044 /* CompareScheduleSheet.swift */; };
+		A00101012B00000100000045 /* BuildingInfoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00102012B00000100000045 /* BuildingInfoSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -87,6 +94,13 @@
 		A00102012B00000100000036 /* ScheduleExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleExporter.swift; sourceTree = "<group>"; };
 		A00102012B00000100000037 /* LiquidGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlass.swift; sourceTree = "<group>"; };
 		A00102012B00000100000038 /* FinderDiffDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderDiffDialogs.swift; sourceTree = "<group>"; };
+		A00102012B00000100000039 /* CustomEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomEvent.swift; sourceTree = "<group>"; };
+		A00102012B00000100000040 /* BuildingInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildingInfo.swift; sourceTree = "<group>"; };
+		A00102012B00000100000041 /* FloatingGlassDockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingGlassDockView.swift; sourceTree = "<group>"; };
+		A00102012B00000100000042 /* HomeworkHubSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkHubSheet.swift; sourceTree = "<group>"; };
+		A00102012B00000100000043 /* CustomEventSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomEventSheet.swift; sourceTree = "<group>"; };
+		A00102012B00000100000044 /* CompareScheduleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareScheduleSheet.swift; sourceTree = "<group>"; };
+		A00102012B00000100000045 /* BuildingInfoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildingInfoSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +160,8 @@
 				A00102012B00000100000003 /* DaySchedule.swift */,
 				A00102012B00000100000004 /* Models.swift */,
 				A00102012B00000100000035 /* ScheduleDiff.swift */,
+				A00102012B00000100000039 /* CustomEvent.swift */,
+				A00102012B00000100000040 /* BuildingInfo.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -222,6 +238,7 @@
 			children = (
 				A00102012B00000100000018 /* Components.swift */,
 				A00102012B00000100000037 /* LiquidGlass.swift */,
+				A00102012B00000100000041 /* FloatingGlassDockView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -231,6 +248,10 @@
 			children = (
 				A00102012B00000100000019 /* Dialogs.swift */,
 				A00102012B00000100000038 /* FinderDiffDialogs.swift */,
+				A00102012B00000100000042 /* HomeworkHubSheet.swift */,
+				A00102012B00000100000043 /* CustomEventSheet.swift */,
+				A00102012B00000100000044 /* CompareScheduleSheet.swift */,
+				A00102012B00000100000045 /* BuildingInfoSheet.swift */,
 			);
 			path = Dialogs;
 			sourceTree = "<group>";
@@ -379,6 +400,8 @@
 				A00101012B00000100000003 /* DaySchedule.swift in Sources */,
 				A00101012B00000100000004 /* Models.swift in Sources */,
 				A00101012B00000100000035 /* ScheduleDiff.swift in Sources */,
+				A00101012B00000100000039 /* CustomEvent.swift in Sources */,
+				A00101012B00000100000040 /* BuildingInfo.swift in Sources */,
 				A00101012B00000100000005 /* WeekCalculator.swift in Sources */,
 				A00101012B00000100000006 /* HolidayChecker.swift in Sources */,
 				A00101012B00000100000007 /* ScheduleClock.swift in Sources */,
@@ -397,8 +420,13 @@
 				A00101012B00000100000017 /* SettingsViewModel.swift in Sources */,
 				A00101012B00000100000018 /* Components.swift in Sources */,
 				A00101012B00000100000037 /* LiquidGlass.swift in Sources */,
+				A00101012B00000100000041 /* FloatingGlassDockView.swift in Sources */,
 				A00101012B00000100000019 /* Dialogs.swift in Sources */,
 				A00101012B00000100000038 /* FinderDiffDialogs.swift in Sources */,
+				A00101012B00000100000042 /* HomeworkHubSheet.swift in Sources */,
+				A00101012B00000100000043 /* CustomEventSheet.swift in Sources */,
+				A00101012B00000100000044 /* CompareScheduleSheet.swift in Sources */,
+				A00101012B00000100000045 /* BuildingInfoSheet.swift in Sources */,
 				A00101012B00000100000020 /* SelectionViews.swift in Sources */,
 				A00101012B00000100000021 /* LessonCardView.swift in Sources */,
 				A00101012B00000100000022 /* WeekDayPickerView.swift in Sources */,

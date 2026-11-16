@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct WeekDayPickerView: View {
+    public let activeSemester: SemesterType
     public let weekNumber: Int
     public let isEven: Bool
     public let selectedDayOfWeek: Int
@@ -14,6 +15,7 @@ public struct WeekDayPickerView: View {
     @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
     
     public init(
+        activeSemester: SemesterType = .fall,
         weekNumber: Int,
         isEven: Bool,
         selectedDayOfWeek: Int,
@@ -23,6 +25,7 @@ public struct WeekDayPickerView: View {
         onResetWeek: @escaping () -> Void,
         onSelectDay: @escaping (Int) -> Void
     ) {
+        self.activeSemester = activeSemester
         self.weekNumber = weekNumber
         self.isEven = isEven
         self.selectedDayOfWeek = selectedDayOfWeek
@@ -33,9 +36,17 @@ public struct WeekDayPickerView: View {
         self.onSelectDay = onSelectDay
     }
     
-    private var monthRangeLabel: String {
+    private var isAtFirstWeek: Bool {
+        activeSemester == .fall && weekNumber <= 1
+    }
+    
+    private var isAtLastWeek: Bool {
+        activeSemester == .spring && weekNumber >= SemesterManager.totalWeeks
+    }
+    
+    private var dateRangeLabel: String {
         guard let first = days.first?.date, let last = days.last?.date else { return "" }
-        return DateUtils.formatMonthRangeRu(start: first, end: last)
+        return "\(DateUtils.formatDisplayDate(first)) – \(DateUtils.formatDisplayDate(last))"
     }
     
     public var body: some View {
@@ -48,11 +59,12 @@ public struct WeekDayPickerView: View {
                 }) {
                     Image(systemName: "chevron.left")
                         .font(.subheadline.bold())
-                        .foregroundColor(weekNumber <= 1 ? .secondary.opacity(0.4) : .primary)
+                        .foregroundColor(.primary)
+                        .opacity(isAtFirstWeek ? 0.3 : 1.0)
                         .frame(width: 34, height: 34)
                         .liquidGlassCapsule(reducedTransparency: reducedTransparency)
                 }
-                .disabled(weekNumber <= 1)
+                .disabled(isAtFirstWeek)
                 
                 Spacer()
                 
@@ -61,29 +73,19 @@ public struct WeekDayPickerView: View {
                     onResetWeek()
                 }) {
                     VStack(spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text("Неделя \(weekNumber)")
-                                .font(.subheadline.bold())
-                                .foregroundColor(.primary)
-                            
-                            Text(isEven ? "чётная" : "нечётная")
-                                .font(.caption2.bold())
-                                .foregroundColor(isEven ? .uniNextSky : .uniPurple)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .liquidGlassCapsule(
-                                    tint: isEven ? .uniNextSky : .uniPurple,
-                                    reducedTransparency: reducedTransparency
-                                )
-                        }
+                        Text("\(activeSemester.shortName) · Неделя \(weekNumber) (\(isEven ? "Чётная" : "Нечётная"))")
+                            .font(.subheadline.bold())
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                         
-                        if !monthRangeLabel.isEmpty {
-                            Text(monthRangeLabel)
-                                .font(.caption2)
+                        if !dateRangeLabel.isEmpty {
+                            Text(dateRangeLabel)
+                                .font(.caption2.monospacedDigit())
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                 }
                 .buttonStyle(.plain)
@@ -96,11 +98,12 @@ public struct WeekDayPickerView: View {
                 }) {
                     Image(systemName: "chevron.right")
                         .font(.subheadline.bold())
-                        .foregroundColor(weekNumber >= SemesterManager.totalWeeks ? .secondary.opacity(0.4) : .primary)
+                        .foregroundColor(.primary)
+                        .opacity(isAtLastWeek ? 0.3 : 1.0)
                         .frame(width: 34, height: 34)
                         .liquidGlassCapsule(reducedTransparency: reducedTransparency)
                 }
-                .disabled(weekNumber >= SemesterManager.totalWeeks)
+                .disabled(isAtLastWeek)
             }
             .padding(.horizontal)
             

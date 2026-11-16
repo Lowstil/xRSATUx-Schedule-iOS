@@ -1,4 +1,8 @@
 import SwiftUI
+import PhotosUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Bell Schedule Sheet
 
@@ -136,6 +140,11 @@ public struct LessonNoteSheet: View {
     @State private var noteText: String = ""
     @State private var isCompleted: Bool = false
     @State private var existingNoteId: UUID? = nil
+    @State private var existingImagePath: String? = nil
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var pickedPhotoData: Data? = nil
+    @State private var removeExistingPhoto: Bool = false
+    @State private var showFullscreenPhoto: Bool = false
 
     private let repository = ScheduleRepository.shared
 
@@ -144,6 +153,32 @@ public struct LessonNoteSheet: View {
         self.lessonNumber = lessonNumber
         self.subjectName = subjectName
     }
+
+    private var hasPhoto: Bool {
+        if pickedPhotoData != nil { return true }
+        if !removeExistingPhoto, let path = existingImagePath {
+            return repository.loadNotePhotoURL(path: path) != nil
+        }
+        return false
+    }
+
+    private var hasContent: Bool {
+        !noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasPhoto
+    }
+
+    #if canImport(UIKit)
+    private var previewUIImage: UIImage? {
+        if let data = pickedPhotoData {
+            return UIImage(data: data)
+        }
+        if !removeExistingPhoto,
+           let path = existingImagePath,
+           let url = repository.loadNotePhotoURL(path: path) {
+            return UIImage(contentsOfFile: url.path)
+        }
+        return nil
+    }
+    #endif
 
     public var body: some View {
         NavigationStack {
@@ -186,8 +221,70 @@ public struct LessonNoteSheet: View {
                                 .background(Color.primary.opacity(0.05))
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                            Toggle("Отмечено как выполнено", isOn: $isCompleted)
-                                .font(.subheadline.weight(.medium))
+                            if hasContent {
+                                Toggle("Выполнено", isOn: $isCompleted)
+                                    .font(.subheadline.weight(.medium))
+                            }
+                        }
+                        .padding(16)
+                        .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
+
+                        // Photo Attachment Card
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Фото к заметке")
+                                .font(.caption.bold())
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+
+                            #if canImport(UIKit)
+                            if let uiImage = previewUIImage {
+                                Button {
+                                    HapticsService.shared.selection()
+                                    showFullscreenPhoto = true
+                                } label: {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 180)
+                                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .stroke(Color.primary.opacity(0.14), lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            #endif
+
+                            HStack(spacing: 10) {
+                                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                                    Label(hasPhoto ? "Заменить фото" : "Прикрепить фото", systemImage: "photo.on.rectangle.angled")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.accentColor)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .liquidGlassCapsule(tint: .accentColor, reducedTransparency: reducedTransparency)
+                                }
+                                .buttonStyle(.plain)
+
+                                if hasPhoto {
+                                    Button(role: .destructive) {
+                                        pickedPhotoData = nil
+                                        selectedPhotoItem = nil
+                                        removeExistingPhoto = true
+                                        HapticsService.shared.selection()
+                                    } label: {
+                                        Label("Удалить", systemImage: "trash")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundColor(.red)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 10)
+                                            .liquidGlassCapsule(tint: .red, reducedTransparency: reducedTransparency)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
                         .padding(16)
                         .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
@@ -222,7 +319,7 @@ public struct LessonNoteSheet: View {
                         saveNote()
                         dismiss()
                     }
-                    .disabled(noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!hasContent)
                 }
             }
             .onAppear {
@@ -230,18 +327,70 @@ public struct LessonNoteSheet: View {
                     self.noteText = existing.noteText
                     self.isCompleted = existing.isCompleted
                     self.existingNoteId = existing.id
+                    self.existingImagePath = existing.imagePath
                 }
+            }
+            .onChange(of: selectedPhotoItem) { _, newValue in
+                guard let newValue else { return }
+                Task {
+                    guard let rawData = try? await newValue.loadTransferable(type: Data.self) else { return }
+                    #if canImport(UIKit)
+                    let finalData = UIImage(data: rawData)?.jpegData(compressionQuality: 0.82) ?? rawData
+                    #else
+                    let finalData = rawData
+                    #endif
+                    await MainActor.run {
+                        self.pickedPhotoData = finalData
+                        self.removeExistingPhoto = false
+                        HapticsService.shared.selection()
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showFullscreenPhoto) {
+                fullscreenPhotoViewer
             }
         }
     }
 
+    private var fullscreenPhotoViewer: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            #if canImport(UIKit)
+            if let uiImage = previewUIImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+            }
+            #endif
+
+            Button {
+                showFullscreenPhoto = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(20)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func saveNote() {
+        var resolvedImagePath: String? = removeExistingPhoto ? nil : existingImagePath
+        if let data = pickedPhotoData, let savedPath = repository.saveNotePhoto(data) {
+            resolvedImagePath = savedPath
+        }
+
         let note = LessonNote(
             id: existingNoteId ?? UUID(),
             dateString: dateString,
             lessonNumber: lessonNumber,
             subjectName: subjectName,
             noteText: noteText.trimmingCharacters(in: .whitespacesAndNewlines),
+            imagePath: resolvedImagePath,
             isCompleted: isCompleted
         )
         repository.saveNote(note)
@@ -267,11 +416,18 @@ public struct ExcludedSubjectsSheet: View {
     public let allSubjects: [String]
 
     @State private var excludedSet: Set<String> = []
+    @State private var searchQuery: String = ""
     private let repository = ScheduleRepository.shared
 
     public init(groupName: String, allSubjects: [String]) {
         self.groupName = groupName
         self.allSubjects = Array(Set(allSubjects)).sorted()
+    }
+
+    private var filteredSubjects: [String] {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return allSubjects }
+        return allSubjects.filter { $0.localizedCaseInsensitiveContains(q) }
     }
 
     public var body: some View {
@@ -289,27 +445,46 @@ public struct ExcludedSubjectsSheet: View {
                             .padding(14)
                             .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
 
-                        ForEach(allSubjects, id: \.self) { subject in
-                            let isExcluded = excludedSet.contains(subject)
-                            Button(action: {
-                                toggleSubject(subject)
-                            }) {
-                                HStack(spacing: 12) {
-                                    Text(subject)
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundColor(.primary)
-                                        .multilineTextAlignment(.leading)
+                        SearchBarView(text: $searchQuery, placeholder: "Поиск предмета...")
 
-                                    Spacer()
+                        HStack {
+                            Text("Выбрано: \(excludedSet.count) из \(allSubjects.count)")
+                                .font(.caption.bold())
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 4)
 
-                                    Image(systemName: isExcluded ? "checkmark.circle.fill" : "circle")
-                                        .font(.title3)
-                                        .foregroundColor(isExcluded ? .orange : .secondary)
-                                }
-                                .padding(14)
+                        if filteredSubjects.isEmpty {
+                            Text("Предметы не найдены")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(20)
                                 .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
+                        } else {
+                            ForEach(filteredSubjects, id: \.self) { subject in
+                                let isExcluded = excludedSet.contains(subject)
+                                Button(action: {
+                                    toggleSubject(subject)
+                                }) {
+                                    HStack(spacing: 12) {
+                                        Text(subject)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.leading)
+
+                                        Spacer()
+
+                                        Image(systemName: isExcluded ? "checkmark.circle.fill" : "circle")
+                                            .font(.title3)
+                                            .foregroundColor(isExcluded ? .orange : .secondary)
+                                    }
+                                    .padding(14)
+                                    .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                     .padding()
@@ -530,6 +705,7 @@ public struct AttendanceStatisticsSheet: View {
     @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency: Bool = false
 
     public let groupName: String
+    public let semester: SemesterType
 
     @State private var report = AttendanceManager.AttendanceReport(
         overall: AttendanceManager.OverallAttendance(),
@@ -539,8 +715,9 @@ public struct AttendanceStatisticsSheet: View {
 
     private let repository = ScheduleRepository.shared
 
-    public init(groupName: String) {
+    public init(groupName: String, semester: SemesterType = .fall) {
         self.groupName = groupName
+        self.semester = semester
     }
 
     public var body: some View {
@@ -553,7 +730,7 @@ public struct AttendanceStatisticsSheet: View {
                     VStack(spacing: 16) {
                         // Header Subtitle
                         HStack {
-                            Text("Группа: \(groupName)")
+                            Text("Группа: \(groupName) · \(semester.shortName)")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundColor(.secondary)
                             Spacer()
@@ -708,7 +885,11 @@ public struct AttendanceStatisticsSheet: View {
     }
 
     private func reloadReport() {
-        self.report = AttendanceManager.shared.calculateReport(groupName: groupName, repository: repository)
+        self.report = AttendanceManager.shared.calculateReport(
+            groupName: groupName,
+            semester: semester,
+            repository: repository
+        )
     }
 
     private func adjustSubject(_ subject: String, delta: Int) {

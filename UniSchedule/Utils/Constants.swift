@@ -80,6 +80,15 @@ public enum Constants {
     public static let prefReducedTransparency = "reduced_transparency"
     public static let prefLiveLessonNotifEnabled = "live_lesson_notif_enabled"
     public static let prefScheduleDiffData = "schedule_diff_data"
+    public static let prefActiveSemester = "pref_active_semester"
+    public static let prefSemesterStartPrefix = "pref_semester_start_"
+    public static let prefSemesterHashPrefix = "pref_semester_hash_"
+    public static let prefSemesterPublishedPrefix = "pref_semester_published_"
+    public static let prefCustomEventsData = "pref_custom_events_data"
+
+    // MARK: - App Metadata
+    public static let aboutVersion = "3.3.1"
+    public static let githubReleasesURL = "https://github.com/Lowstil/xRSATUx-Schedule-iOS/releases"
     
     // MARK: - App Group for Widgets
     public static let appGroupIdentifier = "group.com.university.schedule"
