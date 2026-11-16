@@ -1,7 +1,15 @@
 import Foundation
+import CryptoKit
 
 public final class NetworkService: NSObject, URLSessionDelegate {
     public static let shared = NetworkService()
+
+    public private(set) var lastDownloadedHash: String? = nil
+
+    public static func sha256Hex(of data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
     
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -79,7 +87,8 @@ public final class NetworkService: NSObject, URLSessionDelegate {
     }
     
     // MARK: - Download File
-    public func downloadFile(from remoteURL: URL, to destinationURL: URL) async throws {
+    @discardableResult
+    public func downloadFile(from remoteURL: URL, to destinationURL: URL) async throws -> String? {
         var request = URLRequest(url: remoteURL)
         request.httpMethod = "GET"
         
@@ -87,6 +96,10 @@ public final class NetworkService: NSObject, URLSessionDelegate {
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw NSError(domain: "NetworkService", code: -1, userInfo: [NSLocalizedDescriptionKey: "HTTP статус ошибки при загрузке"])
         }
+        
+        let data = try Data(contentsOf: tempURL)
+        let hash = Self.sha256Hex(of: data)
+        self.lastDownloadedHash = hash
         
         let fileManager = FileManager.default
         let dir = destinationURL.deletingLastPathComponent()
@@ -97,14 +110,16 @@ public final class NetworkService: NSObject, URLSessionDelegate {
             try fileManager.removeItem(at: destinationURL)
         }
         try fileManager.moveItem(at: tempURL, to: destinationURL)
+        return hash
     }
     
     // MARK: - Fetch Main Schedule
-    public func fetchScheduleFile(cacheURL: URL) async throws {
+    @discardableResult
+    public func fetchScheduleFile(cacheURL: URL) async throws -> String? {
         let remoteURL = await discoverFileURL(pageURL: Constants.schedulePageURL, hint: Constants.scheduleFilenameHint)
             ?? URL(string: Constants.scheduleFallbackURL)!
         
-        try await downloadFile(from: remoteURL, to: cacheURL)
+        return try await downloadFile(from: remoteURL, to: cacheURL)
     }
     
     // MARK: - Fetch Transfers

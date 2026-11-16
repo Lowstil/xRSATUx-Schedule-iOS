@@ -13,11 +13,14 @@ public final class ScheduleFilter {
         weekType: String,
         mondayOfWeek: Date,
         allTransfers: [TransferItem] = [],
+        customEvents: [CustomEvent] = [],
         targetName: String = "",
         isGroup: Bool = true
     ) -> WeekSchedule {
         let isEven = (weekType == Constants.weekTypeEven)
         var days: [DaySchedule] = []
+        let cleanTarget = targetName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isValidSemesterWeek = (weekNumber >= 1 && weekNumber <= SemesterManager.totalWeeks)
         
         for dow in 1...6 {
             let date = DateUtils.dateForDayInWeek(monday: mondayOfWeek, dayOfWeek: dow)
@@ -35,12 +38,30 @@ public final class ScheduleFilter {
                 lessons = mergeTransfers(lessons: lessons, transfers: dayTransfers, date: date, dow: dow, weekType: weekType)
             }
             
+            // Merge custom personal events (recurring events enforced within weeks 1...18)
+            for event in customEvents {
+                let eventTarget = event.targetName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleanTarget.isEmpty {
+                    guard eventTarget.caseInsensitiveCompare(cleanTarget) == .orderedSame,
+                          event.isGroup == isGroup else {
+                        continue
+                    }
+                }
+                if event.isRecurring && !isValidSemesterWeek {
+                    continue
+                }
+                if event.matchesDate(date, dayOfWeek: dow, weekType: weekType) {
+                    lessons.append(event.toScheduleItem(dayOfWeek: dow, isGroup: isGroup))
+                }
+            }
+            
             // Decorate with dynamic attendance status & exclusion for this specific date
             let dateStr = DateUtils.isoDateFormatter.string(from: date)
             let repo = ScheduleRepository.shared
             let excluded = repo.getExcludedSubjects(for: targetName)
             
             lessons = lessons.map { item in
+                guard !item.isCustom else { return item }
                 var copy = item
                 if excluded.contains(item.subjectName) {
                     copy.isExcluded = true
@@ -69,7 +90,7 @@ public final class ScheduleFilter {
             item.dayOfWeek == dayOfWeek &&
             item.weekType.lowercased() == weekType.lowercased() &&
             item.isActiveOnWeek(weekNumber)
-        }
+        }.sorted { $0.lessonNumber < $1.lessonNumber }
     }
     
     public func filterTransfers(
@@ -160,6 +181,175 @@ public final class ScheduleFilter {
             }
         }
         
+        return result.sorted { $0.lessonNumber < $1.lessonNumber }
+    }
+    
+    // MARK: - Lesson Windows / Gaps
+    public static func computeGaps(for lessons: [ScheduleItem], dayOfWeek: Int) -> [LessonGap] {
+        let active = lessons
+            .filter { !$0.isCancelled && !$0.isExcluded && !$0.isSkipped }
+            .sorted { $0.lessonNumber < $1.lessonNumber }
+        guard active.count >= 2 else { return [] }
+        
+        let bellTimes = Constants.getLessonTimes(dayOfWeek: dayOfWeek)
+        var gaps: [LessonGap] = []
+        
+        for idx in 1..<active.count {
+            let prev = active[idx - 1]
+            let curr = active[idx]
+            
+            guard curr.lessonNumber - prev.lessonNumber >= 2,
+                  prev.lessonNumber >= 1, prev.lessonNumber <= bellTimes.count,
+                  curr.lessonNumber >= 1, curr.lessonNumber <= bellTimes.count else {
+                continue
+            }
+            
+            let prevEnd = bellTimes[prev.lessonNumber - 1].end
+            let currStart = bellTimes[curr.lessonNumber - 1].start
+            
+            guard let prevEndMin = parseMinutes(prevEnd),
+                  let currStartMin = parseMinutes(currStart) else {
+                continue
+            }
+            
+            let diff = currStartMin - prevEndMin
+            guard diff > 0 else { continue }
+            
+            let hours = diff / 60
+            let mins = diff % 60
+            let formatted: String
+            if hours > 0 && mins > 0 {
+                formatted = "\(hours) ч \(mins) мин"
+            } else if hours > 0 {
+                formatted = "\(hours) ч"
+            } else {
+                formatted = "\(mins) мин"
+            }
+            
+            gaps.append(
+                LessonGap(
+                    afterLessonNumber: prev.lessonNumber,
+                    beforeLessonNumber: curr.lessonNumber,
+                    startTime: prevEnd,
+                    endTime: currStart,
+                    durationMinutes: diff,
+                    formattedDuration: formatted
+                )
+            )
+        }
+        
+        return gaps
+    }
+    
+    public static func buildDayScheduleEntries(for lessons: [ScheduleItem], dayOfWeek: Int) -> [DayScheduleEntry] {
+        let sorted = lessons.sorted { $0.lessonNumber < $1.lessonNumber }
+        let gaps = computeGaps(for: sorted, dayOfWeek: dayOfWeek)
+        var gapsByBeforeLesson: [Int: LessonGap] = [:]
+        for gap in gaps {
+            if gapsByBeforeLesson[gap.beforeLessonNumber] == nil {
+                gapsByBeforeLesson[gap.beforeLessonNumber] = gap
+            }
+        }
+        
+        var entries: [DayScheduleEntry] = []
+        for item in sorted {
+            if let gap = gapsByBeforeLesson.removeValue(forKey: item.lessonNumber) {
+                entries.append(.gap(gap))
+            }
+            entries.append(.lesson(item))
+        }
+        return entries
+    }
+    
+    private static func parseMinutes(_ timeStr: String) -> Int? {
+        let parts = timeStr.split(separator: ":")
+        guard parts.count == 2,
+              let h = Int(parts[0]),
+              let m = Int(parts[1]) else { return nil }
+        return h * 60 + m
+    }
+
+    // MARK: - Two-Group Schedule Comparison
+
+    public static func buildDayComparison(
+        group1: String,
+        group2: String,
+        week1: WeekSchedule,
+        week2: WeekSchedule,
+        semester: SemesterType,
+        weekNumber: Int,
+        dayOfWeek: Int
+    ) -> CompareResult {
+        let day1 = week1.days.first { $0.dayOfWeek == dayOfWeek }
+        let day2 = week2.days.first { $0.dayOfWeek == dayOfWeek }
+
+        let map1 = mapLessonsBySlot(day: day1)
+        let map2 = mapLessonsBySlot(day: day2)
+
+        var slots: [CompareSlotEntry] = []
+        var commonWindowsCount = 0
+        var bothBusyCount = 0
+        var oneBusyCount = 0
+
+        for slot in 1...7 {
+            let timeLabel = Constants.getLessonTimeLabel(dayOfWeek: dayOfWeek, lessonNumber: slot)
+            let s1 = map1[slot]
+            let s2 = map2[slot]
+            let busy1 = !(s1 ?? "").isEmpty
+            let busy2 = !(s2 ?? "").isEmpty
+
+            let kind: CompareSlotKind
+            if !busy1 && !busy2 {
+                kind = .commonWindow
+                commonWindowsCount += 1
+            } else if busy1 && busy2 {
+                kind = .bothBusy
+                bothBusyCount += 1
+            } else {
+                kind = .oneBusy
+                oneBusyCount += 1
+            }
+
+            slots.append(
+                CompareSlotEntry(
+                    lessonNumber: slot,
+                    timeLabel: timeLabel,
+                    kind: kind,
+                    group1Text: s1,
+                    group2Text: s2
+                )
+            )
+        }
+
+        return CompareResult(
+            group1: group1,
+            group2: group2,
+            semester: semester,
+            weekNumber: weekNumber,
+            dayOfWeek: dayOfWeek,
+            slots: slots,
+            commonWindowsCount: commonWindowsCount,
+            bothBusyCount: bothBusyCount,
+            oneBusyCount: oneBusyCount
+        )
+    }
+
+    private static func mapLessonsBySlot(day: DaySchedule?) -> [Int: String] {
+        guard let day, !day.isDayOff else { return [:] }
+        var grouped: [Int: [String]] = [:]
+
+        for item in day.lessons where !item.isCancelled && !item.isExcluded {
+            let subj = item.subjectName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !subj.isEmpty else { continue }
+            let room = item.room.trimmingCharacters(in: .whitespacesAndNewlines)
+            let formatted = room.isEmpty ? subj : "\(subj) (\(room))"
+            grouped[item.lessonNumber, default: []].append(formatted)
+        }
+
+        var result: [Int: String] = [:]
+        for (slot, parts) in grouped {
+            result[slot] = parts.joined(separator: "; ")
+        }
         return result
     }
 }

@@ -38,6 +38,14 @@ public final class DateUtils {
         Calendar.current.startOfDay(for: Date())
     }
     
+    public static func initialScheduleDate(_ date: Date? = Date()) -> Date? {
+        guard let d = date else { return nil }
+        if Calendar.current.component(.weekday, from: d) == 1 {
+            return Calendar.current.date(byAdding: .day, value: 1, to: d) ?? d
+        }
+        return d
+    }
+    
     public static func toScheduleDayOfWeek(date: Date) -> Int {
         let calendar = Calendar.current
         let weekday = calendar.component(.weekday, from: date)
@@ -56,14 +64,30 @@ public final class DateUtils {
     }
     
     public static func mondayOfWeek(for date: Date) -> Date {
-        var calendar = Calendar.current
-        calendar.firstWeekday = 2 // Monday
-        let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        return calendar.date(from: components) ?? date
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: date)
+        let dow = toScheduleDayOfWeek(date: start) // 1 = Mon ... 6 = Sat, 0 = Sun
+        let offset = (dow == 0) ? -6 : -(dow - 1)
+        return calendar.date(byAdding: .day, value: offset, to: start) ?? start
     }
     
     public static func dateForDayInWeek(monday: Date, dayOfWeek: Int) -> Date {
         Calendar.current.date(byAdding: .day, value: dayOfWeek - 1, to: monday) ?? monday
+    }
+
+    public static func daysBetween(_ from: Date, _ to: Date) -> Int {
+        let cal = Calendar.current
+        let d1 = cal.startOfDay(for: from)
+        let d2 = cal.startOfDay(for: to)
+        return cal.dateComponents([.day], from: d1, to: d2).day ?? 0
+    }
+
+    public static func parseISODate(_ str: String) -> Date? {
+        isoDateFormatter.date(from: str.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    public static func formatISODate(_ date: Date) -> String {
+        isoDateFormatter.string(from: date)
     }
     
     public static func formatDisplayDate(_ date: Date) -> String {

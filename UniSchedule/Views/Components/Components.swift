@@ -2,36 +2,25 @@ import SwiftUI
 
 public struct LessonTypeBadge: View {
     public let type: String
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
     
     public init(type: String) {
         self.type = type
     }
     
     private var color: Color {
-        switch type {
-        case Constants.lessonTypeLecture:
-            return .blue
-        case Constants.lessonTypePractice:
-            return .orange
-        case Constants.lessonTypeLab:
-            return .purple
-        case Constants.lessonTypeOnlineLecture, Constants.lessonTypeOnlinePractice:
-            return .teal
-        case Constants.lessonTypeExam:
-            return .red
-        default:
-            return .secondary
-        }
+        lessonTypeColor(for: type)
     }
     
     public var body: some View {
-        Text(type)
-            .font(.caption2.bold())
-            .foregroundColor(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.15))
-            .cornerRadius(6)
+        if !type.isEmpty {
+            Text(type)
+                .font(.caption2.bold())
+                .foregroundColor(color)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .liquidGlassCapsule(tint: color, reducedTransparency: reducedTransparency)
+        }
     }
 }
 
@@ -39,56 +28,84 @@ public struct LiveTimerBadge: View {
     public let clockState: ScheduleClockState
     
     @State private var isPulsing = false
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
     
     public init(clockState: ScheduleClockState) {
         self.clockState = clockState
     }
     
+    private var isLiveActive: Bool {
+        clockState.currentLessonNumber != nil && clockState.minutesLeftInCurrent >= 0
+    }
+    
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(isPulsing ? 1.3 : 0.9)
-                    .opacity(isPulsing ? 1.0 : 0.5)
-                    .animation(Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isPulsing)
-                
-                Text("Идёт сейчас · осталось \(clockState.minutesLeftInCurrent) мин")
-                    .font(.caption.bold())
-                    .foregroundColor(.green)
-                
-                if !clockState.stageStatusText.isEmpty {
-                    Text("(\(clockState.stageStatusText))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .onAppear {
-                isPulsing = true
-            }
-            
-            // Progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.green.opacity(0.2))
-                        .frame(height: 6)
+        if isLiveActive {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(Color.uniLiveEmerald)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(isPulsing ? 1.32 : 0.88)
+                        .opacity(isPulsing ? 1.0 : 0.45)
+                        .animation(
+                            Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+                            value: isPulsing
+                        )
                     
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.green)
-                        .frame(width: geo.size.width * CGFloat(min(max(clockState.currentProgressPercent, 0.0), 1.0)), height: 6)
+                    Text("Идёт сейчас · осталось \(clockState.minutesLeftInCurrent) мин")
+                        .font(.caption.bold().monospacedDigit())
+                        .foregroundColor(.uniLiveEmerald)
+                    
+                    if !clockState.stageStatusText.isEmpty {
+                        Text("· \(clockState.stageStatusText)")
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .liquidGlassCapsule(tint: .uniLiveEmerald, reducedTransparency: reducedTransparency)
+                .onAppear {
+                    isPulsing = true
+                }
+                .onDisappear {
+                    isPulsing = false
+                }
+                
+                // Progress bar
+                GeometryReader { geo in
+                    let fraction = CGFloat(min(max(clockState.currentProgressPercent, 0.0), 1.0))
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.uniLiveEmerald.opacity(0.18))
+                            .frame(height: 5)
+                        
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.uniLiveEmerald, Color.uniNextSky],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: max(6, geo.size.width * fraction), height: 5)
+                            .shadow(color: Color.uniLiveEmerald.opacity(0.4), radius: 3, x: 0, y: 0)
+                    }
+                }
+                .frame(height: 5)
             }
-            .frame(height: 6)
+            .padding(.vertical, 2)
         }
-        .padding(.vertical, 4)
     }
 }
 
 public struct SearchBarView: View {
     @Binding public var text: String
     public var placeholder: String = "Поиск группы или преподавателя..."
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
     
     public init(text: Binding<String>, placeholder: String = "Поиск группы или преподавателя...") {
         self._text = text
@@ -96,8 +113,9 @@ public struct SearchBarView: View {
     }
     
     public var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
+                .font(.subheadline.weight(.medium))
                 .foregroundColor(.secondary)
             
             TextField(placeholder, text: $text)
@@ -111,8 +129,8 @@ public struct SearchBarView: View {
                 }
             }
         }
-        .padding(10)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .liquidGlassCard(cornerRadius: 14, state: .normal, reducedTransparency: reducedTransparency)
     }
 }

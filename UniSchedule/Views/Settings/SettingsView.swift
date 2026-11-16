@@ -2,85 +2,306 @@ import SwiftUI
 
 public struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @StateObject private var viewModel = SettingsViewModel()
+    @ObservedObject private var repository = ScheduleRepository.shared
+    
+    @State private var showingFinderSheet = false
+    @State private var showingDiffSheet = false
+    @State private var showingBellSheet = false
+    @State private var showingClearDataDialog = false
     
     public init() {}
     
     public var body: some View {
         NavigationStack {
-            Form {
-                // Theme
-                Section(header: Text("Оформление")) {
-                    Picker("Тема приложения", selection: $viewModel.themeMode) {
-                        ForEach(ThemeMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+            ZStack {
+                AmbientBackdropView(reducedTransparency: viewModel.reducedTransparency)
+                    .animation(.easeInOut(duration: 0.25), value: viewModel.reducedTransparency)
+                
+                ScrollView {
+                    VStack(spacing: 18) {
+                        // Appearance & Glass
+                        glassSection(title: "Оформление") {
+                            VStack(spacing: 12) {
+                                HStack {
+                                    Label("Тема приложения", systemImage: "circle.lefthalf.filled")
+                                        .font(.subheadline.weight(.medium))
+                                    Spacer()
+                                    Picker("Тема приложения", selection: $viewModel.themeMode) {
+                                        ForEach(ThemeMode.allCases) { mode in
+                                            Text(mode.rawValue).tag(mode)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                }
+                                
+                                Divider().opacity(0.25)
+                                
+                                Toggle(isOn: $viewModel.reducedTransparency) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Уменьшить прозрачность")
+                                            .font(.subheadline.weight(.medium))
+                                        Text("Снижает размытие и отключает анимацию фона")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
                         }
-                    }
-                }
-                
-                // Notifications
-                Section(header: Text("Уведомления")) {
-                    Toggle("Напоминание перед началом пары", isOn: $viewModel.remindersEnabled)
-                    
-                    if viewModel.remindersEnabled {
-                        Picker("Время напоминания", selection: $viewModel.reminderMinutesBefore) {
-                            Text("За 10 минут").tag(10)
-                            Text("За 15 минут").tag(15)
-                            Text("За 30 минут").tag(30)
+                        
+                        // Notifications
+                        glassSection(title: "Уведомления") {
+                            VStack(spacing: 12) {
+                                Toggle("Напоминание перед началом пары", isOn: $viewModel.remindersEnabled)
+                                    .font(.subheadline.weight(.medium))
+                                
+                                if viewModel.remindersEnabled {
+                                    Divider().opacity(0.25)
+                                    
+                                    HStack {
+                                        Text("Время напоминания")
+                                            .font(.subheadline.weight(.medium))
+                                        Spacer()
+                                        Picker("Время напоминания", selection: $viewModel.reminderMinutesBefore) {
+                                            Text("За 10 минут").tag(10)
+                                            Text("За 15 минут").tag(15)
+                                            Text("За 30 минут").tag(30)
+                                        }
+                                        .pickerStyle(.menu)
+                                    }
+                                }
+                                
+                                Divider().opacity(0.25)
+                                
+                                Toggle("Утренний дайджест в 07:30", isOn: $viewModel.morningDigestEnabled)
+                                    .font(.subheadline.weight(.medium))
+                                
+                                Divider().opacity(0.25)
+                                
+                                Toggle(isOn: $viewModel.liveLessonNotifEnabled) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Живое уведомление пары")
+                                            .font(.subheadline.weight(.medium))
+                                        Text("Этапы 45-5-45 и перемена для текущей пары")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
                         }
-                    }
-                    
-                    Toggle("Утренний дайджест в 07:30", isOn: $viewModel.morningDigestEnabled)
-                }
-                
-                // Semester
-                Section(header: Text("Учебный семестр"), footer: Text(viewModel.semesterDescription)) {
-                    DatePicker(
-                        "Начало семестра",
-                        selection: $viewModel.semesterStartDate,
-                        displayedComponents: [.date]
-                    )
-                }
-                
-                // Cache & Network
-                Section(header: Text("Кэш и данные"), footer: Text(viewModel.cacheStatusMessage)) {
-                    Button(action: {
-                        Task { await viewModel.forceRefresh() }
-                    }) {
-                        HStack {
-                            Text("Обновить расписание с сайта")
-                            Spacer()
-                            if viewModel.isRefreshing {
-                                ProgressView()
+                        
+                        // Quick tools
+                        glassSection(title: "Инструменты") {
+                            VStack(spacing: 12) {
+                                Button(action: { showingFinderSheet = true }) {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "magnifyingglass.circle.fill")
+                                            .foregroundColor(.uniNextSky)
+                                            .font(.title3)
+                                        Text("Где преподаватель / Свободные аудитории")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.leading)
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                
+                                Divider().opacity(0.25)
+                                
+                                Button(action: { showingDiffSheet = true }) {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                                            .foregroundColor(viewModel.hasScheduleDiff ? .uniLiveEmerald : .secondary)
+                                            .font(.title3)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Что изменилось в расписании")
+                                                .font(.subheadline.weight(.medium))
+                                                .foregroundColor(viewModel.hasScheduleDiff ? .primary : .secondary)
+                                            if !viewModel.hasScheduleDiff {
+                                                Text("Пока нет зафиксированных изменений")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                        Spacer()
+                                        if viewModel.hasScheduleDiff {
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption.bold())
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!viewModel.hasScheduleDiff || repository.lastScheduleDiff == nil)
+                                
+                                Divider().opacity(0.25)
+                                
+                                Button(action: { showingBellSheet = true }) {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "bell.circle.fill")
+                                            .foregroundColor(.uniWindowAmber)
+                                            .font(.title3)
+                                        Text("Таблица звонков")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        
+                        // Semester
+                        glassSection(title: "Семестр", footer: viewModel.semesterDescription) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Picker(
+                                    "Семестр",
+                                    selection: Binding(
+                                        get: { viewModel.selectedSemester },
+                                        set: { viewModel.selectSemester($0) }
+                                    )
+                                ) {
+                                    ForEach(SemesterType.allCases) { semester in
+                                        Text(semester.shortName).tag(semester)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+
+                                Text(viewModel.selectedSemesterShortLabel)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.secondary)
+
+                                Divider().opacity(0.25)
+
+                                DatePicker(
+                                    "Начало семестра",
+                                    selection: $viewModel.semesterStartDate,
+                                    displayedComponents: [.date]
+                                )
+                                .font(.subheadline.weight(.medium))
+                            }
+                        }
+                        
+                        // Cache & Network
+                        glassSection(title: "Кэш и данные", footer: viewModel.cacheStatusMessage) {
+                            VStack(spacing: 12) {
+                                Button(action: {
+                                    Task { await viewModel.forceRefresh() }
+                                }) {
+                                    HStack {
+                                        Label("Обновить расписание с сайта", systemImage: "arrow.clockwise")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.uniNextSky)
+                                        Spacer()
+                                        if viewModel.isRefreshing {
+                                            ProgressView()
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(viewModel.isRefreshing)
+                                
+                                Divider().opacity(0.25)
+                                
+                                Button(action: {
+                                    viewModel.clearCache()
+                                }) {
+                                    HStack {
+                                        Label("Сбросить кэш", systemImage: "arrow.counterclockwise")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.uniWindowAmber)
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+
+                                Divider().opacity(0.25)
+
+                                Button(role: .destructive, action: {
+                                    HapticsService.shared.impact(.medium)
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                        showingClearDataDialog = true
+                                    }
+                                }) {
+                                    HStack {
+                                        Label("Очистить данные", systemImage: "trash")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.uniRose)
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        
+                        // About App Card
+                        glassSection(title: "О приложении") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Версия: v\(Constants.aboutVersion)")
+                                        .font(.headline.bold())
+                                        .foregroundColor(.primary)
+
+                                    Text(viewModel.lastUpdatedFormatted)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Divider().opacity(0.25)
+
+                                HStack {
+                                    Text("Университет")
+                                        .font(.subheadline)
+                                    Spacer()
+                                    Text("РГАТУ им. П.А. Соловьёва")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Button(action: {
+                                    HapticsService.shared.selection()
+                                    if let url = URL(string: Constants.githubReleasesURL) {
+                                        openURL(url)
+                                    }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "sparkles")
+                                            .font(.subheadline.weight(.semibold))
+                                        Text("Что нового и релизы (GitHub)")
+                                            .font(.subheadline.weight(.semibold))
+                                        Spacer()
+                                        Image(systemName: "arrow.up.right.square")
+                                            .font(.caption.bold())
+                                    }
+                                    .foregroundColor(.uniNextSky)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity)
+                                    .liquidGlassCapsule(tint: .uniNextSky, reducedTransparency: viewModel.reducedTransparency)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
-                    .disabled(viewModel.isRefreshing)
-                    
-                    Button("Сбросить кэш", role: .destructive) {
-                        viewModel.clearCache()
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
-                
-                // About
-                Section(header: Text("О приложении")) {
-                    HStack {
-                        Text("Версия")
-                        Spacer()
-                        Text("1.0.0 (iOS)")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    HStack {
-                        Text("Университет")
-                        Spacer()
-                        Text("РГАТУ им. П.А. Соловьёва")
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Link("Официальный сайт вуза", destination: URL(string: "https://www.rsatu.ru")!)
+
+                if showingClearDataDialog {
+                    clearDataGlassDialog
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                        .zIndex(10)
                 }
             }
+            .preferredColorScheme(viewModel.themeMode.colorScheme)
             .navigationTitle("Настройки")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -88,6 +309,114 @@ public struct SettingsView: View {
                     Button("Готово") { dismiss() }
                 }
             }
+            .sheet(isPresented: $showingFinderSheet) {
+                RoomTeacherFinderSheet(
+                    repository: .shared,
+                    weekCalculator: WeekCalculator(semesterStartDate: viewModel.semesterStartDate),
+                    initialSemester: viewModel.selectedSemester
+                )
+            }
+            .sheet(isPresented: $showingDiffSheet) {
+                if let diff = repository.lastScheduleDiff {
+                    ScheduleDiffSheet(diff: diff) {
+                        showingDiffSheet = false
+                    }
+                }
+            }
+            .sheet(isPresented: $showingBellSheet) {
+                BellScheduleSheet(clockState: ScheduleClock.compute(for: Date(), scheduleLessons: []))
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func glassSection<Content: View>(
+        title: String,
+        footer: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.caption.bold())
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+            
+            content()
+                .padding(14)
+                .liquidGlassCard(cornerRadius: 18, state: .normal, reducedTransparency: viewModel.reducedTransparency)
+            
+            if let footer, !footer.isEmpty {
+                Text(footer)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+            }
+        }
+    }
+
+    private var clearDataGlassDialog: some View {
+        ZStack {
+            Color.black.opacity(0.42)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showingClearDataDialog = false
+                    }
+                }
+
+            VStack(spacing: 16) {
+                Image(systemName: "trash.circle.fill")
+                    .font(.system(size: 42))
+                    .foregroundColor(.uniRose)
+
+                VStack(spacing: 6) {
+                    Text("Очистить данные")
+                        .font(.headline.bold())
+                        .foregroundColor(.primary)
+
+                    Text("Удалить расписание и настройки?")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        HapticsService.shared.selection()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showingClearDataDialog = false
+                        }
+                    }) {
+                        Text("Отмена")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .liquidGlassCapsule(reducedTransparency: viewModel.reducedTransparency)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        viewModel.clearAllData()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showingClearDataDialog = false
+                        }
+                    }) {
+                        Text("Удалить")
+                            .font(.subheadline.bold())
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.uniRose)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(22)
+            .frame(maxWidth: 320)
+            .liquidGlassCard(cornerRadius: 24, state: .normal, reducedTransparency: viewModel.reducedTransparency)
+            .padding(.horizontal, 24)
         }
     }
 }

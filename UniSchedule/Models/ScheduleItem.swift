@@ -21,6 +21,31 @@ public struct ScheduleItem: Identifiable, Codable, Equatable, Hashable {
     public var isExcluded: Bool = false // "Перезачёт"
     public var isSkipped: Bool = false  // "Н-ка"
     public var isAttended: Bool = false // "Посещено / Пойду"
+    public var isCustom: Bool = false
+    public var customEventId: UUID? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case weekType
+        case dayOfWeek
+        case lessonNumber
+        case groupName
+        case teacherName
+        case subjectName
+        case lessonType
+        case room
+        case weekSpec
+        case source
+        case isCancelled
+        case isMovedIn
+        case isRoomChanged
+        case transferNote
+        case isExcluded
+        case isSkipped
+        case isAttended
+        case isCustom
+        case customEventId
+    }
     
     public var attendanceStatus: AttendanceStatus {
         if isSkipped { return .skipped }
@@ -46,7 +71,9 @@ public struct ScheduleItem: Identifiable, Codable, Equatable, Hashable {
         transferNote: String? = nil,
         isExcluded: Bool = false,
         isSkipped: Bool = false,
-        isAttended: Bool = false
+        isAttended: Bool = false,
+        isCustom: Bool = false,
+        customEventId: UUID? = nil
     ) {
         self.id = id
         self.weekType = weekType
@@ -66,6 +93,32 @@ public struct ScheduleItem: Identifiable, Codable, Equatable, Hashable {
         self.isExcluded = isExcluded
         self.isSkipped = isSkipped
         self.isAttended = isAttended
+        self.isCustom = isCustom
+        self.customEventId = customEventId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.weekType = try c.decode(String.self, forKey: .weekType)
+        self.dayOfWeek = try c.decode(Int.self, forKey: .dayOfWeek)
+        self.lessonNumber = try c.decode(Int.self, forKey: .lessonNumber)
+        self.groupName = try c.decodeIfPresent(String.self, forKey: .groupName) ?? ""
+        self.teacherName = try c.decodeIfPresent(String.self, forKey: .teacherName) ?? ""
+        self.subjectName = try c.decode(String.self, forKey: .subjectName)
+        self.lessonType = try c.decodeIfPresent(String.self, forKey: .lessonType) ?? ""
+        self.room = try c.decodeIfPresent(String.self, forKey: .room) ?? ""
+        self.weekSpec = try c.decodeIfPresent(String.self, forKey: .weekSpec) ?? ""
+        self.source = try c.decodeIfPresent(String.self, forKey: .source) ?? "group"
+        self.isCancelled = try c.decodeIfPresent(Bool.self, forKey: .isCancelled) ?? false
+        self.isMovedIn = try c.decodeIfPresent(Bool.self, forKey: .isMovedIn) ?? false
+        self.isRoomChanged = try c.decodeIfPresent(Bool.self, forKey: .isRoomChanged) ?? false
+        self.transferNote = try c.decodeIfPresent(String.self, forKey: .transferNote)
+        self.isExcluded = try c.decodeIfPresent(Bool.self, forKey: .isExcluded) ?? false
+        self.isSkipped = try c.decodeIfPresent(Bool.self, forKey: .isSkipped) ?? false
+        self.isAttended = try c.decodeIfPresent(Bool.self, forKey: .isAttended) ?? false
+        self.isCustom = try c.decodeIfPresent(Bool.self, forKey: .isCustom) ?? false
+        self.customEventId = try c.decodeIfPresent(UUID.self, forKey: .customEventId)
     }
     
     public var isOnline: Bool {

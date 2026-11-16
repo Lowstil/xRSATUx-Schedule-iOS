@@ -6,15 +6,28 @@ public struct LessonNote: Identifiable, Codable, Equatable {
     public var lessonNumber: Int
     public var subjectName: String
     public var noteText: String
-    public var isCompleted: Bool
-    public var createdAt: Date
-    
+    public var imagePath: String? = nil
+    public var isCompleted: Bool = false
+    public var createdAt: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case dateString
+        case lessonNumber
+        case subjectName
+        case noteText
+        case imagePath
+        case isCompleted
+        case createdAt
+    }
+
     public init(
         id: UUID = UUID(),
         dateString: String,
         lessonNumber: Int,
         subjectName: String,
         noteText: String,
+        imagePath: String? = nil,
         isCompleted: Bool = false,
         createdAt: Date = Date()
     ) {
@@ -23,8 +36,37 @@ public struct LessonNote: Identifiable, Codable, Equatable {
         self.lessonNumber = lessonNumber
         self.subjectName = subjectName
         self.noteText = noteText
+        self.imagePath = imagePath
         self.isCompleted = isCompleted
         self.createdAt = createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.dateString = try c.decodeIfPresent(String.self, forKey: .dateString) ?? ""
+        self.lessonNumber = try c.decodeIfPresent(Int.self, forKey: .lessonNumber) ?? 1
+        self.subjectName = try c.decodeIfPresent(String.self, forKey: .subjectName) ?? ""
+        self.noteText = try c.decodeIfPresent(String.self, forKey: .noteText) ?? ""
+        self.imagePath = try c.decodeIfPresent(String.self, forKey: .imagePath)
+        self.isCompleted = try c.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
+        if let decodedDate = try? c.decodeIfPresent(Date.self, forKey: .createdAt) {
+            self.createdAt = decodedDate
+        } else if let str = try? c.decodeIfPresent(String.self, forKey: .createdAt),
+                  let isoDate = ISO8601DateFormatter().date(from: str) {
+            self.createdAt = isoDate
+        } else {
+            self.createdAt = Date()
+        }
+    }
+
+    public var date: Date? {
+        DateUtils.isoDateFormatter.date(from: dateString)
+    }
+
+    public var formattedDate: String {
+        guard let d = date else { return dateString }
+        return DateUtils.formatDisplayDate(d)
     }
 }
 
@@ -199,5 +241,119 @@ public struct ScheduleClockState: Equatable {
         self.isBreak = isBreak
         self.currentStage = currentStage
         self.stageStatusText = stageStatusText
+    }
+}
+
+public struct LessonGap: Identifiable, Hashable {
+    public var id: String
+    public var afterLessonNumber: Int
+    public var beforeLessonNumber: Int
+    public var startTime: String
+    public var endTime: String
+    public var durationMinutes: Int
+    public var formattedDuration: String
+    
+    public init(
+        id: String? = nil,
+        afterLessonNumber: Int,
+        beforeLessonNumber: Int,
+        startTime: String,
+        endTime: String,
+        durationMinutes: Int,
+        formattedDuration: String
+    ) {
+        self.id = id ?? "gap_\(afterLessonNumber)_\(beforeLessonNumber)_\(startTime)"
+        self.afterLessonNumber = afterLessonNumber
+        self.beforeLessonNumber = beforeLessonNumber
+        self.startTime = startTime
+        self.endTime = endTime
+        self.durationMinutes = durationMinutes
+        self.formattedDuration = formattedDuration
+    }
+}
+
+public enum DayScheduleEntry: Identifiable, Hashable {
+    case lesson(ScheduleItem)
+    case gap(LessonGap)
+    
+    public var id: String {
+        switch self {
+        case .lesson(let item):
+            return "lesson_\(item.id.uuidString)"
+        case .gap(let gap):
+            return "gap_\(gap.id)"
+        }
+    }
+}
+
+// MARK: - Two-Group Schedule Comparison
+
+public enum CompareSlotKind: String, Codable, Equatable, Hashable {
+    case commonWindow
+    case bothBusy
+    case oneBusy
+}
+
+public struct CompareSlotEntry: Identifiable, Equatable, Hashable {
+    public var id: Int { lessonNumber }
+    public let lessonNumber: Int
+    public let timeLabel: String
+    public let kind: CompareSlotKind
+    public let group1Text: String?
+    public let group2Text: String?
+
+    public init(
+        lessonNumber: Int,
+        timeLabel: String,
+        kind: CompareSlotKind,
+        group1Text: String?,
+        group2Text: String?
+    ) {
+        self.lessonNumber = lessonNumber
+        self.timeLabel = timeLabel
+        self.kind = kind
+        self.group1Text = group1Text
+        self.group2Text = group2Text
+    }
+}
+
+public struct CompareResult: Equatable {
+    public let group1: String
+    public let group2: String
+    public let semester: SemesterType
+    public let weekNumber: Int
+    public let dayOfWeek: Int
+    public let slots: [CompareSlotEntry]
+    public let commonWindowsCount: Int
+    public let bothBusyCount: Int
+    public let oneBusyCount: Int
+
+    public init(
+        group1: String,
+        group2: String,
+        semester: SemesterType,
+        weekNumber: Int,
+        dayOfWeek: Int,
+        slots: [CompareSlotEntry],
+        commonWindowsCount: Int,
+        bothBusyCount: Int,
+        oneBusyCount: Int
+    ) {
+        self.group1 = group1
+        self.group2 = group2
+        self.semester = semester
+        self.weekNumber = weekNumber
+        self.dayOfWeek = dayOfWeek
+        self.slots = slots
+        self.commonWindowsCount = commonWindowsCount
+        self.bothBusyCount = bothBusyCount
+        self.oneBusyCount = oneBusyCount
+    }
+
+    public var summaryText: String {
+        let dayShort = (dayOfWeek >= 1 && dayOfWeek <= Constants.dayNamesShort.count)
+            ? Constants.dayNamesShort[dayOfWeek - 1]
+            : ""
+        return "\(dayShort) · общих окон: \(commonWindowsCount) · заняты оба: \(bothBusyCount) · одна группа: \(oneBusyCount)"
     }
 }

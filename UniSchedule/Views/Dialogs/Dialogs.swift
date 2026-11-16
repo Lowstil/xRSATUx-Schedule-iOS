@@ -1,89 +1,123 @@
 import SwiftUI
+import PhotosUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+// MARK: - Bell Schedule Sheet
 
 public struct BellScheduleSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency: Bool = false
     @State private var selectedDayType: Int = 1 // 1=Будни, 6=Суббота
-    
+
     private let clockState: ScheduleClockState
-    
+
     public init(clockState: ScheduleClockState = ScheduleClockState()) {
         self.clockState = clockState
     }
-    
+
     private var times: [(start: String, end: String)] {
         Constants.getLessonTimes(dayOfWeek: selectedDayType)
     }
-    
+
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                Picker("Тип дня", selection: $selectedDayType) {
-                    Text("Будни (ПН–ПТ)").tag(1)
-                    Text("Суббота (СБ)").tag(6)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                
-                List {
-                    ForEach(0..<times.count, id: \.self) { index in
-                        let lessonNum = index + 1
-                        let t = times[index]
-                        let isCurrent = (clockState.currentLessonNumber == lessonNum)
-                        
-                        VStack(spacing: 8) {
-                            HStack {
-                                ZStack {
-                                    Circle()
-                                        .fill(isCurrent ? Color.accentColor : Color.secondary.opacity(0.15))
-                                        .frame(width: 32, height: 32)
-                                    
-                                    Text("\(lessonNum)")
-                                        .font(.subheadline.bold())
-                                        .foregroundColor(isCurrent ? .white : .primary)
+            ZStack {
+                AmbientBackdropView(
+                    isLessonActive: clockState.currentLessonNumber != nil,
+                    reducedTransparency: reducedTransparency
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 14) {
+                    Picker("Тип дня", selection: $selectedDayType) {
+                        Text("Будни (ПН–ПТ)").tag(1)
+                        Text("Суббота (СБ)").tag(6)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(0..<times.count, id: \.self) { index in
+                                let lessonNum = index + 1
+                                let t = times[index]
+                                let isCurrent = (clockState.currentLessonNumber == lessonNum)
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(isCurrent ? Color.green : Color.secondary.opacity(0.18))
+                                                .frame(width: 34, height: 34)
+
+                                            Text("\(lessonNum)")
+                                                .font(.subheadline.bold())
+                                                .foregroundColor(isCurrent ? .white : .primary)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("\(lessonNum) пара")
+                                                .font(.headline)
+                                                .foregroundColor(isCurrent ? .green : .primary)
+
+                                            if isCurrent {
+                                                HStack(spacing: 6) {
+                                                    Circle()
+                                                        .fill(Color.green)
+                                                        .frame(width: 6, height: 6)
+                                                    Text("Идёт прямо сейчас")
+                                                        .font(.caption.bold())
+                                                        .foregroundColor(.green)
+                                                }
+                                            }
+                                        }
+
+                                        Spacer()
+
+                                        Text("\(t.start) – \(t.end)")
+                                            .font(.system(.subheadline, design: .monospaced).bold())
+                                            .foregroundColor(isCurrent ? .green : .secondary)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .liquidGlassCapsule(
+                                                tint: isCurrent ? .green : nil,
+                                                reducedTransparency: reducedTransparency
+                                            )
+                                    }
+
+                                    // Highlight big break (after pair 2)
+                                    if lessonNum == 2 && selectedDayType == 1 {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "cup.and.saucer.fill")
+                                                .foregroundColor(.orange)
+                                            Text("Большая перемена: 50 минут (11:50 – 12:40)")
+                                                .font(.caption.weight(.medium))
+                                                .foregroundColor(.orange)
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .liquidGlassCapsule(tint: .orange, reducedTransparency: reducedTransparency)
+                                    }
                                 }
-                                
-                                Text("\(lessonNum) пара")
-                                    .font(.headline)
-                                    .foregroundColor(isCurrent ? .accentColor : .primary)
-                                
-                                Spacer()
-                                
-                                Text("\(t.start) – \(t.end)")
-                                    .font(.system(.subheadline, design: .monospaced).bold())
-                                    .foregroundColor(isCurrent ? .accentColor : .secondary)
-                            }
-                            
-                            if isCurrent {
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(Color.green)
-                                        .frame(width: 6, height: 6)
-                                    Text("Идёт прямо сейчас")
-                                        .font(.caption.bold())
-                                        .foregroundColor(.green)
-                                }
-                            }
-                            
-                            // Highlight big break (after pair 2)
-                            if lessonNum == 2 && selectedDayType == 1 {
-                                HStack {
-                                    Image(systemName: "cup.and.saucer.fill")
-                                        .foregroundColor(.orange)
-                                    Text("Большая перемена: 50 минут (11:50 – 12:40)")
-                                        .font(.caption)
-                                        .foregroundColor(.orange)
-                                }
-                                .padding(.top, 4)
+                                .padding(14)
+                                .liquidGlassCard(
+                                    cornerRadius: 18,
+                                    state: isCurrent ? .live : .normal,
+                                    reducedTransparency: reducedTransparency
+                                )
                             }
                         }
-                        .padding(.vertical, 4)
-                        .listRowBackground(isCurrent ? Color.accentColor.opacity(0.08) : Color.clear)
+                        .padding(.horizontal)
+                        .padding(.bottom, 24)
                     }
                 }
-                .listStyle(.insetGrouped)
             }
             .navigationTitle("Таблица звонков")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Закрыть") { dismiss() }
@@ -93,57 +127,189 @@ public struct BellScheduleSheet: View {
     }
 }
 
+// MARK: - Lesson Note Sheet
+
 public struct LessonNoteSheet: View {
     @Environment(\.dismiss) private var dismiss
-    
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency: Bool = false
+
     public let dateString: String
     public let lessonNumber: Int
     public let subjectName: String
-    
+
     @State private var noteText: String = ""
     @State private var isCompleted: Bool = false
     @State private var existingNoteId: UUID? = nil
-    
+    @State private var existingImagePath: String? = nil
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var pickedPhotoData: Data? = nil
+    @State private var removeExistingPhoto: Bool = false
+    @State private var showFullscreenPhoto: Bool = false
+
     private let repository = ScheduleRepository.shared
-    
+
     public init(dateString: String, lessonNumber: Int, subjectName: String) {
         self.dateString = dateString
         self.lessonNumber = lessonNumber
         self.subjectName = subjectName
     }
-    
+
+    private var hasPhoto: Bool {
+        if pickedPhotoData != nil { return true }
+        if !removeExistingPhoto, let path = existingImagePath {
+            return repository.loadNotePhotoURL(path: path) != nil
+        }
+        return false
+    }
+
+    private var hasContent: Bool {
+        !noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasPhoto
+    }
+
+    #if canImport(UIKit)
+    private var previewUIImage: UIImage? {
+        if let data = pickedPhotoData {
+            return UIImage(data: data)
+        }
+        if !removeExistingPhoto,
+           let path = existingImagePath,
+           let url = repository.loadNotePhotoURL(path: path) {
+            return UIImage(contentsOfFile: url.path)
+        }
+        return nil
+    }
+    #endif
+
     public var body: some View {
         NavigationStack {
-            Form {
-                Section(header: Text("Занятие")) {
-                    Text(subjectName)
-                        .font(.headline)
-                    Text("\(lessonNumber) пара · \(dateString)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Section(header: Text("Домашнее задание / Заметка")) {
-                    TextEditor(text: $noteText)
-                        .frame(minHeight: 120)
-                    
-                    Toggle("Отмечено как выполнено", isOn: $isCompleted)
-                }
-                
-                if existingNoteId != nil {
-                    Section {
-                        Button(role: .destructive, action: deleteNote) {
-                            HStack {
-                                Spacer()
-                                Text("Удалить заметку")
-                                Spacer()
+            ZStack {
+                AmbientBackdropView(reducedTransparency: reducedTransparency)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Lesson Info Card
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Занятие")
+                                .font(.caption.bold())
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+
+                            Text(subjectName)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+
+                            Text("\(lessonNumber) пара · \(dateString)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
+
+                        // Note Editor Card
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Домашнее задание / Заметка")
+                                .font(.caption.bold())
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+
+                            TextEditor(text: $noteText)
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 140)
+                                .padding(10)
+                                .background(Color.primary.opacity(0.05))
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                            if hasContent {
+                                Toggle("Выполнено", isOn: $isCompleted)
+                                    .font(.subheadline.weight(.medium))
                             }
                         }
+                        .padding(16)
+                        .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
+
+                        // Photo Attachment Card
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Фото к заметке")
+                                .font(.caption.bold())
+                                .foregroundColor(.secondary)
+                                .textCase(.uppercase)
+
+                            #if canImport(UIKit)
+                            if let uiImage = previewUIImage {
+                                Button {
+                                    HapticsService.shared.selection()
+                                    showFullscreenPhoto = true
+                                } label: {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 180)
+                                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .stroke(Color.primary.opacity(0.14), lineWidth: 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            #endif
+
+                            HStack(spacing: 10) {
+                                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                                    Label(hasPhoto ? "Заменить фото" : "Прикрепить фото", systemImage: "photo.on.rectangle.angled")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.accentColor)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .liquidGlassCapsule(tint: .accentColor, reducedTransparency: reducedTransparency)
+                                }
+                                .buttonStyle(.plain)
+
+                                if hasPhoto {
+                                    Button(role: .destructive) {
+                                        pickedPhotoData = nil
+                                        selectedPhotoItem = nil
+                                        removeExistingPhoto = true
+                                        HapticsService.shared.selection()
+                                    } label: {
+                                        Label("Удалить", systemImage: "trash")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundColor(.red)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 10)
+                                            .liquidGlassCapsule(tint: .red, reducedTransparency: reducedTransparency)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
+
+                        if existingNoteId != nil {
+                            Button(role: .destructive, action: deleteNote) {
+                                HStack {
+                                    Spacer()
+                                    Label("Удалить заметку", systemImage: "trash")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.red)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 14)
+                                .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
+                    .padding()
                 }
             }
             .navigationTitle("Заметка к паре")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Отмена") { dismiss() }
@@ -153,7 +319,7 @@ public struct LessonNoteSheet: View {
                         saveNote()
                         dismiss()
                     }
-                    .disabled(noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!hasContent)
                 }
             }
             .onAppear {
@@ -161,24 +327,76 @@ public struct LessonNoteSheet: View {
                     self.noteText = existing.noteText
                     self.isCompleted = existing.isCompleted
                     self.existingNoteId = existing.id
+                    self.existingImagePath = existing.imagePath
                 }
+            }
+            .onChange(of: selectedPhotoItem) { _, newValue in
+                guard let newValue else { return }
+                Task {
+                    guard let rawData = try? await newValue.loadTransferable(type: Data.self) else { return }
+                    #if canImport(UIKit)
+                    let finalData = UIImage(data: rawData)?.jpegData(compressionQuality: 0.82) ?? rawData
+                    #else
+                    let finalData = rawData
+                    #endif
+                    await MainActor.run {
+                        self.pickedPhotoData = finalData
+                        self.removeExistingPhoto = false
+                        HapticsService.shared.selection()
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showFullscreenPhoto) {
+                fullscreenPhotoViewer
             }
         }
     }
-    
+
+    private var fullscreenPhotoViewer: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            #if canImport(UIKit)
+            if let uiImage = previewUIImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+            }
+            #endif
+
+            Button {
+                showFullscreenPhoto = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(20)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func saveNote() {
+        var resolvedImagePath: String? = removeExistingPhoto ? nil : existingImagePath
+        if let data = pickedPhotoData, let savedPath = repository.saveNotePhoto(data) {
+            resolvedImagePath = savedPath
+        }
+
         let note = LessonNote(
             id: existingNoteId ?? UUID(),
             dateString: dateString,
             lessonNumber: lessonNumber,
             subjectName: subjectName,
             noteText: noteText.trimmingCharacters(in: .whitespacesAndNewlines),
+            imagePath: resolvedImagePath,
             isCompleted: isCompleted
         )
         repository.saveNote(note)
         HapticsService.shared.notification(.success)
     }
-    
+
     private func deleteNote() {
         if let id = existingNoteId {
             repository.deleteNote(id: id)
@@ -188,46 +406,93 @@ public struct LessonNoteSheet: View {
     }
 }
 
+// MARK: - Excluded Subjects Sheet
+
 public struct ExcludedSubjectsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency: Bool = false
+
     public let groupName: String
     public let allSubjects: [String]
-    
+
     @State private var excludedSet: Set<String> = []
+    @State private var searchQuery: String = ""
     private let repository = ScheduleRepository.shared
-    
+
     public init(groupName: String, allSubjects: [String]) {
         self.groupName = groupName
         self.allSubjects = Array(Set(allSubjects)).sorted()
     }
-    
+
+    private var filteredSubjects: [String] {
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return allSubjects }
+        return allSubjects.filter { $0.localizedCaseInsensitiveContains(q) }
+    }
+
     public var body: some View {
         NavigationStack {
-            List {
-                Section(footer: Text("Отмеченные предметы будут отображаться зачёркнутыми с плашкой «Перезачёт», а таймеры и напоминания по ним отключатся.")) {
-                    ForEach(allSubjects, id: \.self) { subject in
-                        let isExcluded = excludedSet.contains(subject)
-                        Button(action: {
-                            toggleSubject(subject)
-                        }) {
-                            HStack {
-                                Text(subject)
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                if isExcluded {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.orange)
-                                } else {
-                                    Image(systemName: "circle")
-                                        .foregroundColor(.secondary)
+            ZStack {
+                AmbientBackdropView(reducedTransparency: reducedTransparency)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 12) {
+                        Text("Отмеченные предметы будут отображаться зачёркнутыми с плашкой «Перезачёт», а таймеры и напоминания по ним отключатся.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
+
+                        SearchBarView(text: $searchQuery, placeholder: "Поиск предмета...")
+
+                        HStack {
+                            Text("Выбрано: \(excludedSet.count) из \(allSubjects.count)")
+                                .font(.caption.bold())
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 4)
+
+                        if filteredSubjects.isEmpty {
+                            Text("Предметы не найдены")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(20)
+                                .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
+                        } else {
+                            ForEach(filteredSubjects, id: \.self) { subject in
+                                let isExcluded = excludedSet.contains(subject)
+                                Button(action: {
+                                    toggleSubject(subject)
+                                }) {
+                                    HStack(spacing: 12) {
+                                        Text(subject)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.leading)
+
+                                        Spacer()
+
+                                        Image(systemName: isExcluded ? "checkmark.circle.fill" : "circle")
+                                            .font(.title3)
+                                            .foregroundColor(isExcluded ? .orange : .secondary)
+                                    }
+                                    .padding(14)
+                                    .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
+                    .padding()
                 }
             }
             .navigationTitle("Перезачёт (\(groupName))")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Готово") { dismiss() }
@@ -238,7 +503,7 @@ public struct ExcludedSubjectsSheet: View {
             }
         }
     }
-    
+
     private func toggleSubject(_ subject: String) {
         repository.toggleExcludedSubject(group: groupName, subject: subject)
         if excludedSet.contains(subject) {
@@ -251,14 +516,17 @@ public struct ExcludedSubjectsSheet: View {
 }
 
 // MARK: - Mark Lesson Attendance Dialog ("Посетил / Н-ка")
+
 public struct MarkLessonAttendanceSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency: Bool = false
+
     public let item: ScheduleItem
     public let date: Date
     public let onMarkAttended: () -> Void
     public let onMarkSkipped: () -> Void
     public let onReset: () -> Void
-    
+
     public init(
         item: ScheduleItem,
         date: Date,
@@ -272,160 +540,155 @@ public struct MarkLessonAttendanceSheet: View {
         self.onMarkSkipped = onMarkSkipped
         self.onReset = onReset
     }
-    
+
     private var isFuture: Bool {
         Calendar.current.startOfDay(for: date) > Calendar.current.startOfDay(for: Date())
     }
-    
+
     public var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                // Header info
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(item.subjectName)
-                        .font(.title3.bold())
-                        .foregroundColor(.primary)
-                    
-                    let roomStr = item.room.isEmpty ? "" : " · ауд. \(item.room)"
-                    Text("\(item.lessonNumber) пара · \(item.timeLabel)\(roomStr)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    Text(DateUtils.formatDisplayDate(date))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                // Current status badge
-                HStack(spacing: 8) {
-                    Text("Текущий статус:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    if item.isAttended {
-                        Text(isFuture ? "🟢 Отмечено: Пойду" : "🟢 Отмечено: Посещено")
-                            .font(.caption.bold())
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.green.opacity(0.12))
-                            .cornerRadius(8)
-                    } else if item.isSkipped {
-                        Text("🔴 Отмечено: Н-ка (пропуск)")
-                            .font(.caption.bold())
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.red.opacity(0.12))
-                            .cornerRadius(8)
-                    } else {
-                        Text("⚪ Не отмечено")
-                            .font(.caption.bold())
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.secondary.opacity(0.12))
-                            .cornerRadius(8)
-                    }
-                }
-                
-                Divider()
-                
-                // Button 1: Посетил / Пойду
-                Button(action: {
-                    onMarkAttended()
-                    dismiss()
-                }) {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 42, height: 42)
-                            Image(systemName: "checkmark")
+            ZStack {
+                AmbientBackdropView(reducedTransparency: reducedTransparency)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Header info card
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(item.subjectName)
                                 .font(.title3.bold())
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(isFuture ? "Пойду на пару" : "Посетил пару")
-                                .font(.headline)
-                                .foregroundColor(.green)
-                            Text("Отметить пару как посещенную (в зачёт)")
+                                .foregroundColor(.primary)
+
+                            let roomStr = item.room.isEmpty ? "" : " · ауд. \(item.room)"
+                            Text("\(item.lessonNumber) пара · \(item.timeLabel)\(roomStr)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+
+                            Text(DateUtils.formatDisplayDate(date))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+
+                            HStack(spacing: 8) {
+                                Text("Статус:")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundColor(.secondary)
+
+                                if item.isAttended {
+                                    Text(isFuture ? "🟢 Отмечено: Пойду" : "🟢 Отмечено: Посещено")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.green)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .liquidGlassCapsule(tint: .green, reducedTransparency: reducedTransparency)
+                                } else if item.isSkipped {
+                                    Text("🔴 Отмечено: Н-ка (пропуск)")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.red)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .liquidGlassCapsule(tint: .red, reducedTransparency: reducedTransparency)
+                                } else {
+                                    Text("⚪ Не отмечено")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .liquidGlassCapsule(reducedTransparency: reducedTransparency)
+                                }
+                            }
+                            .padding(.top, 2)
                         }
-                        Spacer()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .liquidGlassCard(cornerRadius: 20, reducedTransparency: reducedTransparency)
+
+                        // Button 1: Посетил / Пойду
+                        Button(action: {
+                            onMarkAttended()
+                            dismiss()
+                        }) {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 42, height: 42)
+                                    Image(systemName: "checkmark")
+                                        .font(.title3.bold())
+                                        .foregroundColor(.white)
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(isFuture ? "Пойду на пару" : "Посетил пару")
+                                        .font(.headline)
+                                        .foregroundColor(.green)
+                                    Text("Отметить пару как посещенную (в зачёт)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(14)
+                            .liquidGlassCard(cornerRadius: 18, state: .live, reducedTransparency: reducedTransparency)
+                        }
+                        .buttonStyle(.plain)
+
+                        // Button 2: Поставить Н-ку (Пропуск)
+                        Button(action: {
+                            onMarkSkipped()
+                            dismiss()
+                        }) {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 42, height: 42)
+                                    Text("Н")
+                                        .font(.title3.bold())
+                                        .foregroundColor(.white)
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Поставить Н-ку (Пропуск)")
+                                        .font(.headline)
+                                        .foregroundColor(.red)
+                                    Text("Отметить пропуск (напоминания будут отключены)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(14)
+                            .background(Color.red.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
+                        }
+                        .buttonStyle(.plain)
+
+                        // Button 3: Сбросить отметку (if marked)
+                        if item.isAttended || item.isSkipped {
+                            Button(action: {
+                                onReset()
+                                dismiss()
+                            }) {
+                                HStack {
+                                    Spacer()
+                                    Text("Сбросить отметку")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 14)
+                                .liquidGlassCard(cornerRadius: 16, reducedTransparency: reducedTransparency)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .padding(14)
-                    .background(Color.green.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.green.opacity(0.35), lineWidth: 1.5)
-                    )
-                    .cornerRadius(16)
+                    .padding(20)
                 }
-                .buttonStyle(.plain)
-                
-                // Button 2: Поставить Н-ку (Пропуск)
-                Button(action: {
-                    onMarkSkipped()
-                    dismiss()
-                }) {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 42, height: 42)
-                            Text("Н")
-                                .font(.title3.bold())
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Поставить Н-ку (Пропуск)")
-                                .font(.headline)
-                                .foregroundColor(.red)
-                            Text("Отметить пропуск (напоминания будут отключены)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(14)
-                    .background(Color.red.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.red.opacity(0.35), lineWidth: 1.5)
-                    )
-                    .cornerRadius(16)
-                }
-                .buttonStyle(.plain)
-                
-                // Button 3: Сбросить отметку (if marked)
-                if item.isAttended || item.isSkipped {
-                    Button(action: {
-                        onReset()
-                        dismiss()
-                    }) {
-                        HStack {
-                            Spacer()
-                            Text("Сбросить отметку")
-                                .font(.subheadline.bold())
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.vertical, 12)
-                        .background(Color.secondary.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(.plain)
-                }
-                
-                Spacer()
             }
-            .padding(20)
             .navigationTitle("Отметка пары")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Закрыть") { dismiss() }
@@ -436,223 +699,307 @@ public struct MarkLessonAttendanceSheet: View {
 }
 
 // MARK: - Attendance Statistics Dialog ("Моя посещаемость")
+
 public struct AttendanceStatisticsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency: Bool = false
+
     public let groupName: String
-    
-    @State private var report = AttendanceManager.AttendanceReport(overall: AttendanceManager.OverallAttendance(), subjects: [])
+    public let semester: SemesterType
+
+    @State private var report = AttendanceManager.AttendanceReport(
+        overall: AttendanceManager.OverallAttendance(),
+        subjects: []
+    )
+    @State private var skipLimitPercent: Int = AttendanceManager.shared.skipLimitPercent
+
     private let repository = ScheduleRepository.shared
-    
-    public init(groupName: String) {
+
+    public init(groupName: String, semester: SemesterType = .fall) {
         self.groupName = groupName
+        self.semester = semester
     }
-    
+
     public var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 18) {
-                    // Header Subtitle
-                    HStack {
-                        Text("Группа: \(groupName)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 4)
-                    
-                    // Overall Attendance Card
-                    VStack(spacing: 14) {
+            ZStack {
+                AmbientBackdropView(reducedTransparency: reducedTransparency)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Header Subtitle
                         HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Общая посещаемость")
-                                    .font(.subheadline.bold())
-                                    .foregroundColor(.secondary)
-                                
-                                Text("\(report.overall.attendancePercent)%")
-                                    .font(.system(size: 40, weight: .bold, design: .rounded))
-                                    .foregroundColor(percentColor(report.overall.attendancePercent))
-                            }
-                            
+                            Text("Группа: \(groupName) · \(semester.shortName)")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.secondary)
                             Spacer()
-                            
-                            ZStack {
-                                Circle()
-                                    .stroke(Color.secondary.opacity(0.15), lineWidth: 8)
-                                    .frame(width: 64, height: 64)
-                                
-                                Circle()
-                                    .trim(from: 0, to: CGFloat(report.overall.attendancePercent) / 100.0)
-                                    .stroke(percentColor(report.overall.attendancePercent), style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                                    .rotationEffect(.degrees(-90))
-                                    .frame(width: 64, height: 64)
-                            }
-                        }
-                        
-                        // Summary Progress Bar
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.secondary.opacity(0.15))
-                                    .frame(height: 10)
-                                
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(percentColor(report.overall.attendancePercent))
-                                    .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(report.overall.attendancePercent) / 100.0)), height: 10)
-                            }
-                        }
-                        .frame(height: 10)
-                        
-                        Text("Посещено: \(report.overall.attendedCount) из \(report.overall.totalPlanned) пар · \(AttendanceManager.formatSkips(report.overall.missedCount))")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(18)
-                    .background(Color.secondary.opacity(0.08))
-                    .cornerRadius(20)
-                    .padding(.horizontal)
-                    
-                    // Subjects Section
-                    if report.subjects.isEmpty {
-                        VStack(spacing: 10) {
-                            Image(systemName: "chart.bar.doc.horizontal")
-                                .font(.system(size: 40))
+                            Text("Лимит: \(skipLimitPercent)%")
+                                .font(.caption.bold())
                                 .foregroundColor(.secondary)
-                                .padding(.top, 24)
-                            Text("Данные по предметам отсутствуют")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .liquidGlassCapsule(reducedTransparency: reducedTransparency)
                         }
-                        .padding()
-                    } else {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("По предметам")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            
-                            ForEach(report.subjects) { sa in
-                                SubjectAttendanceRow(
-                                    subject: sa,
-                                    onMinus: {
-                                        adjustSubject(sa.subjectName, delta: -1)
-                                    },
-                                    onPlus: {
-                                        adjustSubject(sa.subjectName, delta: 1)
-                                    }
-                                )
-                                .padding(.horizontal)
+                        .padding(.horizontal)
+                        .padding(.top, 6)
+
+                        // Hero Overall Attendance Card
+                        heroSummaryCard
+                            .padding(.horizontal)
+
+                        // Subjects Section
+                        if report.subjects.isEmpty {
+                            VStack(spacing: 10) {
+                                Image(systemName: "chart.bar.doc.horizontal")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.secondary)
+                                    .padding(.top, 18)
+                                Text("Данные по предметам отсутствуют")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(24)
+                            .liquidGlassCard(cornerRadius: 20, reducedTransparency: reducedTransparency)
+                            .padding(.horizontal)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("По предметам")
+                                    .font(.headline)
+                                    .padding(.horizontal)
+
+                                ForEach(report.subjects) { sa in
+                                    SubjectAttendanceRow(
+                                        subject: sa,
+                                        limitPercent: skipLimitPercent,
+                                        reducedTransparency: reducedTransparency,
+                                        onMinus: {
+                                            adjustSubject(sa.subjectName, delta: -1)
+                                        },
+                                        onPlus: {
+                                            adjustSubject(sa.subjectName, delta: 1)
+                                        }
+                                    )
+                                    .padding(.horizontal)
+                                }
                             }
                         }
                     }
+                    .padding(.bottom, 30)
                 }
-                .padding(.bottom, 30)
             }
             .navigationTitle("Моя посещаемость")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Готово") { dismiss() }
                 }
             }
             .onAppear {
+                skipLimitPercent = AttendanceManager.shared.skipLimitPercent
+                reloadReport()
+            }
+            .onChange(of: skipLimitPercent) { _, newValue in
+                AttendanceManager.shared.skipLimitPercent = newValue
+                HapticsService.shared.selection()
                 reloadReport()
             }
         }
     }
-    
-    private func reloadReport() {
-        self.report = AttendanceManager.shared.calculateReport(groupName: groupName, repository: repository)
+
+    private var heroSummaryCard: some View {
+        let overall = report.overall
+        let color = healthColor(overall.budgetHealth)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Общая посещаемость")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.secondary)
+
+                    Text(healthTitle(overall.budgetHealth))
+                        .font(.caption.bold())
+                        .foregroundColor(color)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .liquidGlassCapsule(tint: color, reducedTransparency: reducedTransparency)
+
+                    Text(
+                        AttendanceManager.formatBudgetStatus(
+                            missed: overall.missedCount,
+                            planned: overall.totalPlanned,
+                            limitPct: skipLimitPercent
+                        )
+                    )
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                }
+
+                Spacer()
+
+                CircularProgressRingView(
+                    progress: Double(overall.attendancePercent) / 100.0,
+                    color: color,
+                    lineWidth: 8,
+                    size: 76,
+                    centerText: "\(overall.attendancePercent)%",
+                    font: .system(size: 16, weight: .bold)
+                )
+            }
+
+            Divider()
+                .opacity(0.4)
+
+            HStack {
+                Text("Посещено: \(AttendanceManager.formatLessonsCount(overall.attendedCount)) из \(AttendanceManager.formatLessonsCount(overall.totalPlanned))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Text("\(AttendanceManager.formatSkips(overall.missedCount)) (\(overall.skipPercent)%)")
+                    .font(.caption.bold())
+                    .foregroundColor(overall.missedCount > 0 ? color : .secondary)
+            }
+
+            // Segmented skip-limit selector 20% / 25% / 30%
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Порог допустимых пропусков")
+                    .font(.caption2.bold())
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+
+                Picker("Лимит пропусков", selection: $skipLimitPercent) {
+                    ForEach(AttendanceManager.validSkipLimits, id: \.self) { pct in
+                        Text("\(pct)%").tag(pct)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+        .padding(18)
+        .liquidGlassCard(cornerRadius: 22, reducedTransparency: reducedTransparency)
     }
-    
+
+    private func reloadReport() {
+        self.report = AttendanceManager.shared.calculateReport(
+            groupName: groupName,
+            semester: semester,
+            repository: repository
+        )
+    }
+
     private func adjustSubject(_ subject: String, delta: Int) {
         repository.adjustManualSkips(group: groupName, subject: subject, delta: delta)
         reloadReport()
         HapticsService.shared.selection()
     }
-    
-    private func percentColor(_ percent: Int) -> Color {
-        if percent >= 80 { return .green }
-        if percent >= 60 { return .orange }
-        return .red
+}
+
+private func healthColor(_ health: BudgetHealth) -> Color {
+    switch health {
+    case .safe: return .green
+    case .warning: return .orange
+    case .exceeded: return .red
+    }
+}
+
+private func healthTitle(_ health: BudgetHealth) -> String {
+    switch health {
+    case .safe: return "В норме"
+    case .warning: return "Близко к лимиту"
+    case .exceeded: return "Лимит превышен"
     }
 }
 
 // MARK: - Subject Attendance Row Component
+
 private struct SubjectAttendanceRow: View {
     let subject: AttendanceManager.SubjectAttendance
+    let limitPercent: Int
+    let reducedTransparency: Bool
     let onMinus: () -> Void
     let onPlus: () -> Void
-    
-    private var percentColor: Color {
-        if subject.attendancePercent >= 80 { return .green }
-        if subject.attendancePercent >= 60 { return .orange }
-        return .red
-    }
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                Text(subject.subjectName)
-                    .font(.subheadline.bold())
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                
-                Spacer()
-                
-                Text("\(subject.attendancePercent)%")
-                    .font(.subheadline.bold())
-                    .foregroundColor(percentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(percentColor.opacity(0.12))
-                    .cornerRadius(6)
-            }
-            
-            // Progress Bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.secondary.opacity(0.15))
-                        .frame(height: 6)
-                    
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(percentColor)
-                        .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(subject.attendancePercent) / 100.0)), height: 6)
+        let color = healthColor(subject.budgetHealth)
+
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                CircularProgressRingView(
+                    progress: Double(subject.attendancePercent) / 100.0,
+                    color: color,
+                    lineWidth: 5,
+                    size: 48,
+                    centerText: "\(subject.attendancePercent)%",
+                    font: .system(size: 11, weight: .bold)
+                )
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(subject.subjectName)
+                        .font(.subheadline.bold())
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+
+                    HStack(spacing: 6) {
+                        Text("Пропуски: \(subject.skipPercent)%")
+                            .font(.caption2.bold())
+                            .foregroundColor(color)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .liquidGlassCapsule(tint: color, reducedTransparency: reducedTransparency)
+
+                        Text(
+                            AttendanceManager.formatBudgetStatus(
+                                missed: subject.missedCount,
+                                planned: subject.totalPlanned,
+                                limitPct: limitPercent
+                            )
+                        )
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(color)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .liquidGlassCapsule(tint: color, reducedTransparency: reducedTransparency)
+                    }
                 }
+
+                Spacer(minLength: 0)
             }
-            .frame(height: 6)
-            
+
             HStack {
-                Text("Посещено \(subject.attendedCount) из \(subject.totalPlanned) · \(AttendanceManager.formatSkips(subject.missedCount))")
+                Text("Посещено \(AttendanceManager.formatLessonsCount(subject.attendedCount)) из \(subject.totalPlanned) · \(AttendanceManager.formatSkips(subject.missedCount))")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
-                // Stepper Buttons (+ / -)
+
+                // Stepper Buttons (- / +)
                 HStack(spacing: 8) {
                     Button(action: onMinus) {
                         Image(systemName: "minus")
                             .font(.caption.bold())
                             .foregroundColor(.primary)
-                            .frame(width: 28, height: 28)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(Circle())
+                            .frame(width: 30, height: 30)
+                            .liquidGlassCapsule(reducedTransparency: reducedTransparency)
                     }
                     .buttonStyle(.plain)
-                    
+
                     Button(action: onPlus) {
                         Image(systemName: "plus")
                             .font(.caption.bold())
                             .foregroundColor(.primary)
-                            .frame(width: 28, height: 28)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(Circle())
+                            .frame(width: 30, height: 30)
+                            .liquidGlassCapsule(reducedTransparency: reducedTransparency)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            
+
             // Warning Badge: >= 3 skips
             if subject.hasWarning {
                 HStack(spacing: 6) {
@@ -660,14 +1007,12 @@ private struct SubjectAttendanceRow: View {
                         .font(.caption2.bold())
                         .foregroundColor(.orange)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.orange.opacity(0.12))
-                .cornerRadius(6)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .liquidGlassCapsule(tint: .orange, reducedTransparency: reducedTransparency)
             }
         }
         .padding(14)
-        .background(Color.secondary.opacity(0.06))
-        .cornerRadius(16)
+        .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
     }
 }
