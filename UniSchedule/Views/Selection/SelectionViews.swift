@@ -5,20 +5,23 @@ public struct FavoritesBarView: View {
     public let currentTarget: String
     public let onSelect: (GroupOrTeacher) -> Void
     public let onRemove: ((GroupOrTeacher) -> Void)?
+    public let onCompare: ((SelectionType, String) -> Void)?
     
     @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
-    @State private var favoritePendingRemoval: GroupOrTeacher? = nil
+    @State private var favoriteActionTarget: GroupOrTeacher? = nil
     
     public init(
         favorites: [GroupOrTeacher],
         currentTarget: String,
         onSelect: @escaping (GroupOrTeacher) -> Void,
-        onRemove: ((GroupOrTeacher) -> Void)? = nil
+        onRemove: ((GroupOrTeacher) -> Void)? = nil,
+        onCompare: ((SelectionType, String) -> Void)? = nil
     ) {
         self.favorites = favorites
         self.currentTarget = currentTarget
         self.onSelect = onSelect
         self.onRemove = onRemove
+        self.onCompare = onCompare
     }
     
     public var body: some View {
@@ -64,7 +67,7 @@ public struct FavoritesBarView: View {
                         }
                         .onLongPressGesture(minimumDuration: 0.45) {
                             HapticsService.shared.impact(.medium)
-                            favoritePendingRemoval = item
+                            favoriteActionTarget = item
                         }
                         .accessibilityAddTraits(.isButton)
                     }
@@ -72,22 +75,33 @@ public struct FavoritesBarView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 4)
             }
-            .alert(
-                "Удалить из избранного?",
+            .confirmationDialog(
+                favoriteActionTarget?.name ?? "Избранное",
                 isPresented: Binding(
-                    get: { favoritePendingRemoval != nil },
-                    set: { if !$0 { favoritePendingRemoval = nil } }
+                    get: { favoriteActionTarget != nil },
+                    set: { if !$0 { favoriteActionTarget = nil } }
                 ),
-                presenting: favoritePendingRemoval
+                titleVisibility: .visible,
+                presenting: favoriteActionTarget
             ) { item in
-                Button("Удалить", role: .destructive) {
+                if item.type == .group,
+                   item.name.caseInsensitiveCompare(currentTarget) != .orderedSame,
+                   let onCompare {
+                    Button("⚖️ Сравнить с текущей") {
+                        HapticsService.shared.selection()
+                        onCompare(item.type, item.name)
+                        favoriteActionTarget = nil
+                    }
+                }
+
+                Button("🗑 Удалить из избранного", role: .destructive) {
+                    HapticsService.shared.notification(.warning)
                     removeFavorite(item)
                 }
+
                 Button("Отмена", role: .cancel) {
-                    favoritePendingRemoval = nil
+                    favoriteActionTarget = nil
                 }
-            } message: { item in
-                Text("Убрать «\(item.name)» из быстрого доступа?")
             }
         }
     }
@@ -98,7 +112,7 @@ public struct FavoritesBarView: View {
         } else if ScheduleRepository.shared.isFavorite(name: item.name, type: item.type) {
             ScheduleRepository.shared.toggleFavorite(name: item.name, type: item.type)
         }
-        favoritePendingRemoval = nil
+        favoriteActionTarget = nil
     }
 }
 

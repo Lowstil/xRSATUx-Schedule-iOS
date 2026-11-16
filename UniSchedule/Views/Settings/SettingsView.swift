@@ -2,12 +2,14 @@ import SwiftUI
 
 public struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @StateObject private var viewModel = SettingsViewModel()
     @ObservedObject private var repository = ScheduleRepository.shared
     
     @State private var showingFinderSheet = false
     @State private var showingDiffSheet = false
     @State private var showingBellSheet = false
+    @State private var showingClearDataDialog = false
     
     public init() {}
     
@@ -15,6 +17,7 @@ public struct SettingsView: View {
         NavigationStack {
             ZStack {
                 AmbientBackdropView(reducedTransparency: viewModel.reducedTransparency)
+                    .animation(.easeInOut(duration: 0.25), value: viewModel.reducedTransparency)
                 
                 ScrollView {
                     VStack(spacing: 18) {
@@ -157,13 +160,34 @@ public struct SettingsView: View {
                         }
                         
                         // Semester
-                        glassSection(title: "Учебный семестр", footer: viewModel.semesterDescription) {
-                            DatePicker(
-                                "Начало семестра",
-                                selection: $viewModel.semesterStartDate,
-                                displayedComponents: [.date]
-                            )
-                            .font(.subheadline.weight(.medium))
+                        glassSection(title: "Семестр", footer: viewModel.semesterDescription) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Picker(
+                                    "Семестр",
+                                    selection: Binding(
+                                        get: { viewModel.selectedSemester },
+                                        set: { viewModel.selectSemester($0) }
+                                    )
+                                ) {
+                                    ForEach(SemesterType.allCases) { semester in
+                                        Text(semester.shortName).tag(semester)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+
+                                Text(viewModel.selectedSemesterShortLabel)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.secondary)
+
+                                Divider().opacity(0.25)
+
+                                DatePicker(
+                                    "Начало семестра",
+                                    selection: $viewModel.semesterStartDate,
+                                    displayedComponents: [.date]
+                                )
+                                .font(.subheadline.weight(.medium))
+                            }
                         }
                         
                         // Cache & Network
@@ -187,11 +211,28 @@ public struct SettingsView: View {
                                 
                                 Divider().opacity(0.25)
                                 
-                                Button(role: .destructive, action: {
+                                Button(action: {
                                     viewModel.clearCache()
                                 }) {
                                     HStack {
-                                        Label("Сбросить кэш", systemImage: "trash")
+                                        Label("Сбросить кэш", systemImage: "arrow.counterclockwise")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.uniWindowAmber)
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+
+                                Divider().opacity(0.25)
+
+                                Button(role: .destructive, action: {
+                                    HapticsService.shared.impact(.medium)
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                        showingClearDataDialog = true
+                                    }
+                                }) {
+                                    HStack {
+                                        Label("Очистить данные", systemImage: "trash")
                                             .font(.subheadline.weight(.medium))
                                             .foregroundColor(.uniRose)
                                         Spacer()
@@ -201,20 +242,21 @@ public struct SettingsView: View {
                             }
                         }
                         
-                        // About
+                        // About App Card
                         glassSection(title: "О приложении") {
-                            VStack(spacing: 12) {
-                                HStack {
-                                    Text("Версия")
-                                        .font(.subheadline)
-                                    Spacer()
-                                    Text("3.0 (Liquid Glass)")
-                                        .font(.subheadline)
+                            VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Версия: v\(Constants.aboutVersion)")
+                                        .font(.headline.bold())
+                                        .foregroundColor(.primary)
+
+                                    Text(viewModel.lastUpdatedFormatted)
+                                        .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
-                                
+
                                 Divider().opacity(0.25)
-                                
+
                                 HStack {
                                     Text("Университет")
                                         .font(.subheadline)
@@ -223,27 +265,43 @@ public struct SettingsView: View {
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
                                 }
-                                
-                                Divider().opacity(0.25)
-                                
-                                Link(destination: URL(string: "https://www.rsatu.ru")!) {
-                                    HStack {
-                                        Text("Официальный сайт вуза")
-                                            .font(.subheadline.weight(.medium))
-                                            .foregroundColor(.uniNextSky)
+
+                                Button(action: {
+                                    HapticsService.shared.selection()
+                                    if let url = URL(string: Constants.githubReleasesURL) {
+                                        openURL(url)
+                                    }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "sparkles")
+                                            .font(.subheadline.weight(.semibold))
+                                        Text("Что нового и релизы (GitHub)")
+                                            .font(.subheadline.weight(.semibold))
                                         Spacer()
                                         Image(systemName: "arrow.up.right.square")
-                                            .font(.caption)
-                                            .foregroundColor(.uniNextSky)
+                                            .font(.caption.bold())
                                     }
+                                    .foregroundColor(.uniNextSky)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity)
+                                    .liquidGlassCapsule(tint: .uniNextSky, reducedTransparency: viewModel.reducedTransparency)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                 }
+
+                if showingClearDataDialog {
+                    clearDataGlassDialog
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                        .zIndex(10)
+                }
             }
+            .preferredColorScheme(viewModel.themeMode.colorScheme)
             .navigationTitle("Настройки")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -254,7 +312,8 @@ public struct SettingsView: View {
             .sheet(isPresented: $showingFinderSheet) {
                 RoomTeacherFinderSheet(
                     repository: .shared,
-                    weekCalculator: WeekCalculator(semesterStartDate: viewModel.semesterStartDate)
+                    weekCalculator: WeekCalculator(semesterStartDate: viewModel.semesterStartDate),
+                    initialSemester: viewModel.selectedSemester
                 )
             }
             .sheet(isPresented: $showingDiffSheet) {
@@ -292,6 +351,72 @@ public struct SettingsView: View {
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 6)
             }
+        }
+    }
+
+    private var clearDataGlassDialog: some View {
+        ZStack {
+            Color.black.opacity(0.42)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showingClearDataDialog = false
+                    }
+                }
+
+            VStack(spacing: 16) {
+                Image(systemName: "trash.circle.fill")
+                    .font(.system(size: 42))
+                    .foregroundColor(.uniRose)
+
+                VStack(spacing: 6) {
+                    Text("Очистить данные")
+                        .font(.headline.bold())
+                        .foregroundColor(.primary)
+
+                    Text("Удалить расписание и настройки?")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        HapticsService.shared.selection()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showingClearDataDialog = false
+                        }
+                    }) {
+                        Text("Отмена")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .liquidGlassCapsule(reducedTransparency: viewModel.reducedTransparency)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        viewModel.clearAllData()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showingClearDataDialog = false
+                        }
+                    }) {
+                        Text("Удалить")
+                            .font(.subheadline.bold())
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.uniRose)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(22)
+            .frame(maxWidth: 320)
+            .liquidGlassCard(cornerRadius: 24, state: .normal, reducedTransparency: viewModel.reducedTransparency)
+            .padding(.horizontal, 24)
         }
     }
 }

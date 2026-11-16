@@ -8,6 +8,7 @@ public struct RoomTeacherFinderSheet: View {
 
     public let repository: ScheduleRepository
     public let weekCalculator: WeekCalculator
+    public let initialSemester: SemesterType
 
     private enum FinderTab: Int, CaseIterable {
         case teacher = 0
@@ -35,19 +36,93 @@ public struct RoomTeacherFinderSheet: View {
         BuildingOption(id: "3", title: "3 корпус", filter: "3")
     ]
 
-    @State private var selectedTab: FinderTab = .teacher
+    private let defaultRoomDay: Int
+    private let defaultRoomWeekType: String
+    private let isSundayToday: Bool
+
+    @State private var selectedTab: FinderTab
     @State private var searchQuery: String = ""
-    @State private var selectedTeacher: String? = nil
-    @State private var selectedBuildingFilter: String? = nil
+    @State private var selectedTeacher: String?
+    @State private var selectedBuildingFilter: String?
+    @State private var selectedRoomWeekType: String
+    @State private var selectedRoomDay: Int
     @State private var selectedSlot: Int
 
-    public init(repository: ScheduleRepository = .shared, weekCalculator: WeekCalculator) {
+    public init(
+        repository: ScheduleRepository = .shared,
+        weekCalculator: WeekCalculator,
+        initialSemester: SemesterType = .fall,
+        initialTeacher: String? = nil,
+        initialBuildingFilter: String? = nil
+    ) {
         self.repository = repository
         self.weekCalculator = weekCalculator
+        self.initialSemester = initialSemester
 
-        let clock = ScheduleClock.compute(for: Date(), scheduleLessons: [])
+        let now = Date()
+        let rawDow = DateUtils.toScheduleDayOfWeek(date: now)
+        let sunday = (rawDow == 0)
+        let resolvedDate = sunday
+            ? (Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now)
+            : now
+        let resolvedDow = (rawDow >= 1 && rawDow <= 6) ? rawDow : 1
+        let resolvedWeekType = weekCalculator.getWeekType(for: resolvedDate) ?? weekCalculator.currentWeekType
+
+        self.isSundayToday = sunday
+        self.defaultRoomDay = resolvedDow
+        self.defaultRoomWeekType = resolvedWeekType
+
+        let clock = ScheduleClock.compute(for: now, scheduleLessons: [])
         let defaultSlot = clock.currentLessonNumber ?? clock.nextLessonNumber ?? 1
-        _selectedSlot = State(initialValue: min(max(defaultSlot, 1), 6))
+        _selectedSlot = State(initialValue: min(max(defaultSlot, 1), 7))
+        _selectedRoomDay = State(initialValue: resolvedDow)
+        _selectedRoomWeekType = State(initialValue: resolvedWeekType)
+
+        let trimmedTeacher = initialTeacher?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedBuilding = initialBuildingFilter?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let building = trimmedBuilding, !building.isEmpty {
+            _selectedTab = State(initialValue: .freeRooms)
+            let matchedOption = Self.buildingOptions.first { opt in
+                guard let f = opt.filter else { return false }
+                return f.caseInsensitiveCompare(building) == .orderedSame
+            }
+            _selectedBuildingFilter = State(initialValue: matchedOption?.filter ?? building)
+            _selectedTeacher = State(initialValue: nil)
+        } else if !trimmedTeacher.isEmpty {
+            _selectedTab = State(initialValue: .teacher)
+            _selectedBuildingFilter = State(initialValue: nil)
+            let allTeachers = repository.getAllTeacherNames(semester: initialSemester)
+            let matched = Self.resolveTeacherMatch(query: trimmedTeacher, from: allTeachers)
+            _selectedTeacher = State(initialValue: matched ?? trimmedTeacher)
+        } else {
+            _selectedTab = State(initialValue: .teacher)
+            _selectedBuildingFilter = State(initialValue: nil)
+            _selectedTeacher = State(initialValue: nil)
+        }
+    }
+
+    private static func resolveTeacherMatch(query: String, from teachers: [String]) -> String? {
+        let candidates = query
+            .components(separatedBy: CharacterSet(charactersIn: ",;/"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        for candidate in [query] + candidates {
+            if let exact = teachers.first(where: { $0.caseInsensitiveCompare(candidate) == .orderedSame }) {
+                return exact
+            }
+        }
+        for candidate in [query] + candidates {
+            let low = candidate.lowercased()
+            if let partial = teachers.first(where: {
+                let tLow = $0.lowercased()
+                return tLow.contains(low) || low.contains(tLow)
+            }) {
+                return partial
+            }
+        }
+        return nil
     }
 
     private var targetDate: Date {
@@ -74,7 +149,7 @@ public struct RoomTeacherFinderSheet: View {
     }
 
     private var filteredTeachers: [String] {
-        let all = repository.getAllTeacherNames()
+        let all = repository.getAllTeacherNames(semester: initialSemester)
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return all }
         return all.filter { $0.localizedCaseInsensitiveContains(q) }
@@ -206,7 +281,8 @@ public struct RoomTeacherFinderSheet: View {
         let lessons = repository.getLessonsForTeacher(
             teacher,
             weekType: targetWeekType,
-            dayOfWeek: targetDayOfWeek
+            dayOfWeek: targetDayOfWeek,
+            semester: initialSemester
         )
         let clock = ScheduleClock.compute(for: Date(), scheduleLessons: lessons)
         let weekLabel = targetWeekType == Constants.weekTypeEven ? "чётная" : "нечётная"
@@ -218,7 +294,7 @@ public struct RoomTeacherFinderSheet: View {
                         .font(.headline)
                         .foregroundColor(.primary)
 
-                    Text("\(targetDayName) · \(weekLabel) неделя")
+                    Text("\(initialSemester.shortName) · \(targetDayName) · \(weekLabel) неделя")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -357,19 +433,83 @@ public struct RoomTeacherFinderSheet: View {
     // MARK: - Tab 2: Free Rooms
 
     private var freeRoomsContent: some View {
+        let hasAnyRooms = !repository.getAllDistinctRooms(buildingFilter: nil, semester: initialSemester).isEmpty
         let freeRooms = repository.getFreeRooms(
-            weekType: targetWeekType,
-            dayOfWeek: targetDayOfWeek,
+            weekType: selectedRoomWeekType,
+            dayOfWeek: selectedRoomDay,
             lessonNumber: selectedSlot,
-            buildingFilter: selectedBuildingFilter
+            buildingFilter: selectedBuildingFilter,
+            semester: initialSemester
         )
-        let weekLabel = targetWeekType == Constants.weekTypeEven ? "чётная" : "нечётная"
+        let wtLabel = (selectedRoomWeekType == Constants.weekTypeEven) ? "Чётная" : "Нечётная"
+        let dayIdx = max(0, min(selectedRoomDay - 1, Constants.dayNamesShort.count - 1))
+        let dayShort = Constants.dayNamesShort[dayIdx]
+        let slotTime = Constants.getLessonTimeLabel(dayOfWeek: selectedRoomDay, lessonNumber: selectedSlot)
+        let summaryText: String = {
+            if selectedRoomDay == defaultRoomDay && selectedRoomWeekType == defaultRoomWeekType {
+                if isSundayToday {
+                    return "Воскресенье (показан ПН, \(wtLabel)) · \(selectedSlot) пара (\(slotTime)) · свободно: \(freeRooms.count)"
+                } else {
+                    return "Сегодня (\(dayShort), \(wtLabel)) · \(selectedSlot) пара (\(slotTime)) · свободно: \(freeRooms.count)"
+                }
+            }
+            return "\(dayShort), \(wtLabel) нед. · \(selectedSlot) пара (\(slotTime)) · свободно: \(freeRooms.count)"
+        }()
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // Week type & Day filters ("Неделя и день:")
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Неделя и день:")
+                            .font(.caption.bold())
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+
+                        Spacer()
+
+                        Text(initialSemester.shortName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Picker("Тип недели", selection: $selectedRoomWeekType) {
+                        Text("Нечётная").tag(Constants.weekTypeOdd)
+                        Text("Чётная").tag(Constants.weekTypeEven)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedRoomWeekType) { _, _ in
+                        HapticsService.shared.selection()
+                    }
+
+                    HStack(spacing: 6) {
+                        ForEach(1...6, id: \.self) { dow in
+                            let isSelected = (selectedRoomDay == dow)
+                            Button(action: {
+                                selectedRoomDay = dow
+                                HapticsService.shared.selection()
+                            }) {
+                                Text(Constants.dayNamesShort[dow - 1])
+                                    .font(.caption.bold())
+                                    .foregroundColor(isSelected ? .white : .primary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(isSelected ? Color.accentColor : Color.secondary.opacity(0.14))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(14)
+                .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
+                .padding(.horizontal)
+
                 // Building filter chips
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Корпус")
+                    Text("Корпус:")
                         .font(.caption.bold())
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
@@ -400,23 +540,25 @@ public struct RoomTeacherFinderSheet: View {
                     }
                 }
 
-                // Lesson slot picker (1...6)
+                // Lesson slot picker (1...7)
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Пара")
+                        Text("Номер пары:")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
                             .textCase(.uppercase)
 
                         Spacer()
 
-                        Text("\(targetDayName) · \(weekLabel) неделя")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        if !slotTime.isEmpty {
+                            Text(slotTime)
+                                .font(.caption.monospacedDigit())
+                                .foregroundColor(.secondary)
+                        }
                     }
 
-                    HStack(spacing: 8) {
-                        ForEach(1...6, id: \.self) { slot in
+                    HStack(spacing: 6) {
+                        ForEach(1...7, id: \.self) { slot in
                             let isSelected = (selectedSlot == slot)
                             Button(action: {
                                 selectedSlot = slot
@@ -424,9 +566,10 @@ public struct RoomTeacherFinderSheet: View {
                             }) {
                                 VStack(spacing: 2) {
                                     Text("\(slot)")
-                                        .font(.headline.bold())
+                                        .font(.subheadline.bold())
                                     Text("пара")
-                                        .font(.system(size: 10, weight: .medium))
+                                        .font(.system(size: 9, weight: .medium))
+                                        .minimumScaleFactor(0.8)
                                 }
                                 .foregroundColor(isSelected ? .white : .primary)
                                 .frame(maxWidth: .infinity)
@@ -439,34 +582,33 @@ public struct RoomTeacherFinderSheet: View {
                             .buttonStyle(.plain)
                         }
                     }
-
-                    let slotTime = Constants.getLessonTimeLabel(dayOfWeek: targetDayOfWeek, lessonNumber: selectedSlot)
-                    if !slotTime.isEmpty {
-                        Text("Время \(selectedSlot) пары: \(slotTime)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
                 }
                 .padding(14)
                 .liquidGlassCard(cornerRadius: 18, reducedTransparency: reducedTransparency)
                 .padding(.horizontal)
 
-                // Results header + count badge
-                HStack {
-                    Text("Свободные аудитории")
-                        .font(.headline)
+                // Results header + dynamic summary
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Свободные аудитории")
+                            .font(.headline)
 
-                    Spacer()
+                        Spacer()
 
-                    Text("Свободно: \(freeRooms.count)")
-                        .font(.caption.bold())
-                        .foregroundColor(freeRooms.isEmpty ? .secondary : .green)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .liquidGlassCapsule(
-                            tint: freeRooms.isEmpty ? nil : .green,
-                            reducedTransparency: reducedTransparency
-                        )
+                        Text("Свободно: \(freeRooms.count)")
+                            .font(.caption.bold())
+                            .foregroundColor(freeRooms.isEmpty ? .secondary : .green)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .liquidGlassCapsule(
+                                tint: freeRooms.isEmpty ? nil : .green,
+                                reducedTransparency: reducedTransparency
+                            )
+                    }
+
+                    Text(summaryText)
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondary)
                 }
                 .padding(.horizontal)
 
@@ -475,9 +617,12 @@ public struct RoomTeacherFinderSheet: View {
                         Image(systemName: "door.left.hand.closed")
                             .font(.system(size: 32))
                             .foregroundColor(.secondary)
-                        Text("Свободных аудиторий не найдено")
+                        Text(hasAnyRooms
+                             ? "Свободных аудиторий по выбранным параметрам не найдено"
+                             : "Нет данных об аудиториях. Обновите расписание.")
                             .font(.subheadline.weight(.medium))
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(24)
