@@ -60,6 +60,7 @@ public final class SettingsViewModel: ObservableObject {
             }
             SemesterManager.saveSemesterStart(normalized, for: selectedSemester)
             NotificationCenter.default.post(name: NSNotification.Name("SemesterConfigChanged"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("NotificationSettingsChanged"), object: nil)
         }
     }
 
@@ -79,6 +80,7 @@ public final class SettingsViewModel: ObservableObject {
                     _ = await NotificationManager.shared.requestAuthorization()
                 }
             }
+            NotificationCenter.default.post(name: NSNotification.Name("NotificationSettingsChanged"), object: nil)
         }
     }
 
@@ -120,6 +122,88 @@ public final class SettingsViewModel: ObservableObject {
                 self.isSyncingSemesterDate = false
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSNotification.Name("AttendanceChanged"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSNotification.Name("SelectionTargetChanged"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+    }
+
+    public var currentSelectionName: String {
+        UserDefaults.standard.string(forKey: Constants.prefSelectionName) ?? "ИВБ-24"
+    }
+
+    public var currentSelectionIsGroup: Bool {
+        (UserDefaults.standard.string(forKey: Constants.prefSelectionType) ?? "group") == "group"
+    }
+
+    public var allSubjectsForCurrentGroup: [String] {
+        repository.getAllSubjects(for: currentSelectionName)
+    }
+
+    public var excludedSubjectsSummary: String {
+        let excluded = repository.getExcludedSubjects(for: currentSelectionName)
+        return excluded.isEmpty ? "Нет исключённых предметов" : "Исключено предметов: \(excluded.count)"
+    }
+
+    public func selectTarget(name: String, isGroup: Bool) {
+        UserDefaults.standard.set(isGroup ? "group" : "teacher", forKey: Constants.prefSelectionType)
+        UserDefaults.standard.set(name, forKey: Constants.prefSelectionName)
+        repository.saveFastTargetCache(for: repository.activeSemester, targetName: name, isGroup: isGroup)
+        NotificationCenter.default.post(name: NSNotification.Name("SelectionTargetChanged"), object: nil)
+        objectWillChange.send()
+    }
+
+    public func buildCurrentExportData() -> (day: DaySchedule?, week: WeekSchedule?, targetName: String, isGroup: Bool) {
+        let targetName = currentSelectionName
+        let isGroup = currentSelectionIsGroup
+        let sem = repository.activeSemester
+        guard !targetName.isEmpty, repository.isSemesterPublished(sem) else {
+            return (nil, nil, targetName, isGroup)
+        }
+
+        let today = Date()
+        let windowSem = SemesterManager.getCurrentWindowSemester(today: today)
+        let calc = WeekCalculator(semesterStartDate: SemesterManager.loadSemesterStart(for: sem))
+        let targetDate = DateUtils.initialScheduleDate(today) ?? today
+        let weekNum: Int
+        let dow: Int
+        if sem == windowSem {
+            let w = calc.getWeekNumber(for: targetDate)
+            weekNum = (w > 0) ? min(max(1, w), SemesterManager.totalWeeks) : calc.currentWeekNumber
+            let d = DateUtils.toScheduleDayOfWeek(date: targetDate)
+            dow = (d >= 1 && d <= 6) ? d : 1
+        } else {
+            weekNum = 1
+            dow = 1
+        }
+
+        let monday = calc.getMondayOfWeek(weekNumber: weekNum)
+            ?? DateUtils.mondayOfWeek(for: SemesterManager.loadSemesterStart(for: sem))
+        let weekType = calc.isEvenWeek(weekNum) ? Constants.weekTypeEven : Constants.weekTypeOdd
+        let items = repository.getSchedule(for: targetName, isGroup: isGroup, semester: sem)
+        let custom = repository.getCustomEvents(for: targetName, isGroup: isGroup)
+        let week = ScheduleFilter().buildWeekSchedule(
+            allItems: items,
+            weekNumber: weekNum,
+            weekType: weekType,
+            mondayOfWeek: monday,
+            allTransfers: [],
+            customEvents: custom,
+            targetName: targetName,
+            isGroup: isGroup
+        )
+        let day = week.days.first(where: { $0.dayOfWeek == dow })
+        return (day, week, targetName, isGroup)
     }
 
     public var semesterDescription: String {
@@ -152,6 +236,7 @@ public final class SettingsViewModel: ObservableObject {
         isSyncingSemesterDate = false
         repository.setActiveSemester(semester)
         NotificationCenter.default.post(name: NSNotification.Name("SemesterConfigChanged"), object: nil)
+        NotificationCenter.default.post(name: NSNotification.Name("NotificationSettingsChanged"), object: nil)
         updateCacheStatus()
         HapticsService.shared.selection()
     }
@@ -199,6 +284,7 @@ public final class SettingsViewModel: ObservableObject {
     }
 
     private func handleNotificationSettingsChange() {
+        NotificationCenter.default.post(name: NSNotification.Name("NotificationSettingsChanged"), object: nil)
         if remindersEnabled || morningDigestEnabled {
             Task {
                 let granted = await NotificationManager.shared.requestAuthorization()

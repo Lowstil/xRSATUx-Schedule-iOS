@@ -667,4 +667,95 @@ final class UniScheduleTests: XCTestCase {
         XCTAssertNil(decodedLegacyPayload.previewLabel)
         XCTAssertEqual(decodedLegacyPayload.semesterId, "fall")
     }
+
+    // MARK: - 3.3.2 Optimization & Indexed Lookup Tests
+
+    func testVersionConstantIs332() {
+        XCTAssertEqual(Constants.aboutVersion, "3.3.2")
+    }
+
+    func testRepositoryIndexedLookups() {
+        let repo = ScheduleRepository.shared
+        repo.loadFromCacheOrBundle()
+
+        let allFall = repo.items(for: .fall)
+        XCTAssertTrue(repo.isSemesterPublished(.fall))
+        XCTAssertFalse(allFall.isEmpty)
+
+        // 1. O(1) group schedule lookup (trimmed + case-insensitive)
+        let targetGroup = "ИВБ-24"
+        let expectedGroupItems = allFall.filter {
+            $0.groupName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == targetGroup.lowercased()
+        }
+        let indexedSchedule = repo.getSchedule(for: "  ивб-24 ", isGroup: true, semester: .fall)
+        XCTAssertFalse(indexedSchedule.isEmpty)
+        XCTAssertEqual(indexedSchedule.count, expectedGroupItems.count)
+        XCTAssertTrue(repo.getSchedule(for: "NONEXISTENT_GROUP_999", isGroup: true, semester: .fall).isEmpty)
+
+        // 2. O(1) subjects lookup for group
+        let subjects = repo.getAllSubjects(for: targetGroup)
+        XCTAssertFalse(subjects.isEmpty)
+        XCTAssertEqual(subjects, subjects.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending })
+        let allSemGroupItems = SemesterType.allCases.flatMap { repo.items(for: $0) }.filter {
+            $0.groupName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == targetGroup.lowercased()
+        }
+        let expectedSubjectsLower = Set(
+            allSemGroupItems
+                .map { $0.subjectName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+        XCTAssertEqual(Set(subjects.map { $0.lowercased() }), expectedSubjectsLower)
+        XCTAssertTrue(repo.getAllSubjects(for: "").isEmpty)
+
+        // 3. O(1) teacher lessons lookup
+        let separators = CharacterSet(charactersIn: ",;/")
+        if let sampleItem = allFall.first(where: {
+            !$0.isCancelled &&
+            !$0.teacherName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            $0.teacherName != "-" &&
+            $0.teacherName != "—"
+        }) {
+            let teacherToken = sampleItem.teacherName
+                .components(separatedBy: separators)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty && $0 != "-" && $0 != "—" } ?? sampleItem.teacherName
+            let teacherLessons = repo.getLessonsForTeacher(
+                teacherToken,
+                weekType: sampleItem.weekType,
+                dayOfWeek: sampleItem.dayOfWeek,
+                semester: .fall
+            )
+            XCTAssertFalse(teacherLessons.isEmpty)
+            XCTAssertTrue(teacherLessons.contains { $0.subjectName == sampleItem.subjectName })
+            let lessonNums = teacherLessons.map(\.lessonNumber)
+            XCTAssertEqual(lessonNums, lessonNums.sorted())
+        } else {
+            XCTFail("Expected at least one active teacher lesson in bundled sample schedule")
+        }
+        XCTAssertTrue(repo.getLessonsForTeacher("", weekType: "odd", dayOfWeek: 1, semester: .fall).isEmpty)
+
+        // 4. O(1) distinct rooms & free rooms lookup
+        let allRooms = repo.getAllDistinctRooms(buildingFilter: nil, semester: .fall)
+        XCTAssertFalse(allRooms.isEmpty)
+
+        let mainBuildingRooms = repo.getAllDistinctRooms(buildingFilter: "Г", semester: .fall)
+        XCTAssertFalse(mainBuildingRooms.isEmpty)
+        XCTAssertTrue(mainBuildingRooms.allSatisfy { $0.uppercased().hasPrefix("Г") })
+
+        let freeRooms = repo.getFreeRooms(
+            weekType: "odd",
+            dayOfWeek: 1,
+            lessonNumber: 1,
+            buildingFilter: nil,
+            semester: .fall
+        )
+        let occupiedLower = Set(
+            allFall
+                .filter { !$0.isCancelled && $0.weekType.lowercased() == "odd" && $0.dayOfWeek == 1 && $0.lessonNumber == 1 }
+                .map { $0.room.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+        let expectedFreeLower = Set(allRooms.map { $0.lowercased() }).subtracting(occupiedLower)
+        XCTAssertEqual(Set(freeRooms.map { $0.lowercased() }), expectedFreeLower)
+    }
 }

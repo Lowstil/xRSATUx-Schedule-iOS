@@ -79,7 +79,7 @@ public struct FloatingGlassDockView: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
         .background(
             ZStack {
                 if effectiveReduced {
@@ -102,10 +102,10 @@ public struct FloatingGlassDockView: View {
             )
         )
         .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.42 : 0.14),
-            radius: 16,
+            color: Color.black.opacity(colorScheme == .dark ? 0.36 : 0.12),
+            radius: 14,
             x: 0,
-            y: 8
+            y: 6
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
@@ -120,11 +120,11 @@ public struct FloatingGlassDockView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: 2.5) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: systemImage)
                         .font(.system(size: 16, weight: isActive ? .bold : .semibold))
-                        .frame(height: 20)
+                        .frame(height: 19)
 
                     if let badge {
                         Text(badge)
@@ -144,7 +144,7 @@ public struct FloatingGlassDockView: View {
             }
             .foregroundColor(isActive ? .accentColor : .primary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
+            .padding(.vertical, 6)
             .background(
                 Group {
                     if isActive {
@@ -177,7 +177,7 @@ public struct MoreActionsSheet: View {
     public let onHomeworkHub: () -> Void
     public let onBellSchedule: () -> Void
     public let onScheduleDiff: () -> Void
-    public let onExportSchedule: () -> Void
+    public let onExportSchedule: (() -> Void)?
     public let onRefreshSchedule: () -> Void
     public let onSettings: () -> Void
 
@@ -190,7 +190,7 @@ public struct MoreActionsSheet: View {
         onHomeworkHub: @escaping () -> Void,
         onBellSchedule: @escaping () -> Void,
         onScheduleDiff: @escaping () -> Void,
-        onExportSchedule: @escaping () -> Void,
+        onExportSchedule: (() -> Void)? = nil,
         onRefreshSchedule: @escaping () -> Void,
         onSettings: @escaping () -> Void
     ) {
@@ -219,12 +219,11 @@ public struct MoreActionsSheet: View {
                     .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         actionRow(
-                            icon: "plus.circle.fill",
+                            emoji: "➕",
                             iconColor: .uniCustomPurple,
-                            title: "Личное событие",
-                            subtitle: "Добавить пару, встречу или дедлайн"
+                            title: "Личное событие"
                         ) {
                             HapticsService.shared.selection()
                             dismiss()
@@ -232,10 +231,9 @@ public struct MoreActionsSheet: View {
                         }
 
                         actionRow(
-                            icon: "arrow.left.arrow.right.circle.fill",
+                            emoji: "⚖️",
                             iconColor: .uniNextSky,
-                            title: "Сравнить группы (Общие окна)",
-                            subtitle: "Найти свободные пары двух групп"
+                            title: "Сравнить группы (Общие окна)"
                         ) {
                             HapticsService.shared.selection()
                             dismiss()
@@ -243,10 +241,9 @@ public struct MoreActionsSheet: View {
                         }
 
                         actionRow(
-                            icon: "note.text",
+                            emoji: "📝",
                             iconColor: .uniLiveEmerald,
                             title: "Домашки и заметки",
-                            subtitle: "Задания, фото и быстрый переход к паре",
                             badge: pendingBadgeText
                         ) {
                             HapticsService.shared.selection()
@@ -255,10 +252,9 @@ public struct MoreActionsSheet: View {
                         }
 
                         actionRow(
-                            icon: "bell.badge.fill",
+                            emoji: "🔔",
                             iconColor: .uniWindowAmber,
-                            title: "Расписание звонков",
-                            subtitle: "Будни и суббота"
+                            title: "Расписание звонков"
                         ) {
                             HapticsService.shared.selection()
                             dismiss()
@@ -266,10 +262,9 @@ public struct MoreActionsSheet: View {
                         }
 
                         actionRow(
-                            icon: "arrow.triangle.2.circlepath",
+                            emoji: "🔄",
                             iconColor: hasScheduleDiff ? .uniNextSky : .secondary,
-                            title: "Что изменилось",
-                            subtitle: hasScheduleDiff ? "Есть изменения после обновления" : "Просмотреть журнал изменений"
+                            title: "Что изменилось"
                         ) {
                             HapticsService.shared.selection()
                             dismiss()
@@ -277,21 +272,9 @@ public struct MoreActionsSheet: View {
                         }
 
                         actionRow(
-                            icon: "square.and.arrow.up",
-                            iconColor: .accentColor,
-                            title: "Экспорт расписания",
-                            subtitle: "Текст или карточка Liquid Glass"
-                        ) {
-                            HapticsService.shared.selection()
-                            dismiss()
-                            onExportSchedule()
-                        }
-
-                        actionRow(
-                            icon: "arrow.clockwise",
+                            emoji: "↻",
                             iconColor: .uniLiveEmerald,
-                            title: "Обновить расписание",
-                            subtitle: isUpdating ? "Идёт загрузка..." : "Загрузить свежий файл с сайта",
+                            title: isUpdating ? "Обновление расписания..." : "Обновить расписание",
                             isLoading: isUpdating
                         ) {
                             HapticsService.shared.selection()
@@ -300,10 +283,9 @@ public struct MoreActionsSheet: View {
                         }
 
                         actionRow(
-                            icon: "gearshape.fill",
+                            emoji: "⚙",
                             iconColor: .secondary,
-                            title: "Настройки",
-                            subtitle: "Семестр, тема, уведомления и о приложении"
+                            title: "Настройки"
                         ) {
                             HapticsService.shared.selection()
                             dismiss()
@@ -311,60 +293,50 @@ public struct MoreActionsSheet: View {
                         }
                     }
                     .padding(.horizontal)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 10)
                 }
             }
             .navigationTitle("Ещё")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Закрыть") { dismiss() }
                 }
             }
         }
-        .presentationDetents([.fraction(0.75), .large])
+        .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
     }
 
     @ViewBuilder
     private func actionRow(
-        icon: String,
+        emoji: String,
         iconColor: Color,
         title: String,
-        subtitle: String,
         badge: String? = nil,
         isLoading: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 13) {
+            HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(iconColor.opacity(0.16))
-                        .frame(width: 38, height: 38)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(iconColor.opacity(0.15))
+                        .frame(width: 34, height: 34)
 
                     if isLoading {
                         ProgressView()
-                            .scaleEffect(0.8)
+                            .scaleEffect(0.78)
                     } else {
-                        Image(systemName: icon)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(iconColor)
+                        Text(emoji)
+                            .font(.system(size: 16))
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
 
                 Spacer(minLength: 6)
 
@@ -373,17 +345,17 @@ public struct MoreActionsSheet: View {
                         .font(.caption2.bold().monospacedDigit())
                         .foregroundColor(.white)
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
+                        .padding(.vertical, 2.5)
                         .background(Capsule().fill(Color.accentColor))
                 }
 
                 Image(systemName: "chevron.right")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary.opacity(0.7))
+                    .foregroundColor(.secondary.opacity(0.65))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .liquidGlassCard(cornerRadius: 16, state: .normal, reducedTransparency: reducedTransparency)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .liquidGlassCard(cornerRadius: 15, state: .normal, reducedTransparency: reducedTransparency)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -396,22 +368,48 @@ public struct SemesterToastPill: View {
     public let message: String?
 
     @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     @Environment(\.colorScheme) private var colorScheme
 
     public init(message: String?) {
         self.message = message
     }
 
+    private var effectiveReduced: Bool {
+        reducedTransparency || systemReduceTransparency
+    }
+
     public var body: some View {
         Group {
             if let message, !message.isEmpty {
+                let shape = Capsule()
                 Text(message)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.accentColor)
                     .lineLimit(1)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
-                    .liquidGlassCapsule(tint: .accentColor, reducedTransparency: reducedTransparency)
+                    .background(
+                        ZStack {
+                            if effectiveReduced {
+                                shape.fill(Color.uniGlassSurfaceFallback)
+                            } else {
+                                shape.fill(.ultraThinMaterial)
+                                shape.fill(Color.accentColor.opacity(0.14))
+                            }
+                        }
+                    )
+                    .clipShape(shape)
+                    .overlay(
+                        shape.strokeBorder(
+                            LinearGradient(
+                                colors: [Color.accentColor.opacity(0.55), Color.accentColor.opacity(0.20)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                    )
                     .shadow(
                         color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12),
                         radius: 10,

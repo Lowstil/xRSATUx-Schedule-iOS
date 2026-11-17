@@ -46,8 +46,10 @@ public final class ScheduleViewModel: ObservableObject {
     @Published public var skipLimitPercent: Int
     @Published public var activeScheduleDiff: ScheduleDiffResult? = nil
     @Published public var showScheduleDiffSheet: Bool = false
-    @Published public private(set) var weekCache: [String: WeekSchedule] = [:]
+    @Published public private(set) var warningsBySubject: [String: String] = [:]
     @Published public private(set) var pendingNotesCount: Int = 0
+
+    private var weekCache: [String: WeekSchedule] = [:]
 
     private let repository = ScheduleRepository.shared
     private let scheduleFilter = ScheduleFilter()
@@ -132,7 +134,17 @@ public final class ScheduleViewModel: ObservableObject {
     }
 
     public func weekSchedule(for semester: SemesterType, week: Int) -> WeekSchedule? {
-        weekCache[cacheKey(semester: semester, week: week)]
+        let clampedWeek = min(max(1, week), Self.weekCount)
+        let key = cacheKey(semester: semester, week: clampedWeek)
+        if let cached = weekCache[key] {
+            return cached
+        }
+        guard !selectedName.isEmpty, isSemesterPublished(semester) else {
+            return nil
+        }
+        let built = buildWeekSchedule(semester: semester, week: clampedWeek)
+        weekCache[key] = built
+        return built
     }
 
     public func ensureWeekLoaded(semester: SemesterType, week: Int) {
@@ -141,6 +153,11 @@ public final class ScheduleViewModel: ObservableObject {
         if weekCache[key] == nil, !selectedName.isEmpty, isSemesterPublished(semester) {
             weekCache[key] = buildWeekSchedule(semester: semester, week: clampedWeek)
         }
+        prefetchAdjacentWeeks(semester: semester, week: clampedWeek)
+    }
+
+    public func preloadNeighborsIfNeeded(semester: SemesterType, week: Int) {
+        let clampedWeek = min(max(1, week), Self.weekCount)
         prefetchAdjacentWeeks(semester: semester, week: clampedWeek)
     }
 
@@ -273,12 +290,28 @@ public final class ScheduleViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+        NotificationCenter.default.publisher(for: NSNotification.Name("NotificationSettingsChanged"))
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.lastLiveNotifSyncKey = nil
                 self.syncLiveLessonNotifications()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSNotification.Name("SelectionTargetChanged"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let savedType = UserDefaults.standard.string(forKey: Constants.prefSelectionType) ?? "group"
+                let savedName = UserDefaults.standard.string(forKey: Constants.prefSelectionName) ?? "ИВБ-24"
+                let nextIsGroup = (savedType == "group")
+                if savedName != self.selectedName || nextIsGroup != self.isGroup {
+                    self.selectedName = savedName
+                    self.isGroup = nextIsGroup
+                    self.clearWeekCache()
+                    self.loadSchedule()
+                }
             }
             .store(in: &cancellables)
     }
@@ -305,6 +338,7 @@ public final class ScheduleViewModel: ObservableObject {
 
         UserDefaults.standard.set(isGroup ? "group" : "teacher", forKey: Constants.prefSelectionType)
         UserDefaults.standard.set(name, forKey: Constants.prefSelectionName)
+        repository.saveFastTargetCache(for: activeSemester, targetName: name, isGroup: isGroup)
 
         clearWeekCache()
         loadSchedule()
@@ -321,6 +355,7 @@ public final class ScheduleViewModel: ObservableObject {
             self.weekSchedule = nil
         }
 
+        recomputeWarningsBySubject()
         lastLiveNotifSyncKey = nil
         updateClockAndNextLesson()
         exportWidgetData()
@@ -666,19 +701,38 @@ public final class ScheduleViewModel: ObservableObject {
         )
     }
 
-    public func getWarningForSubject(_ subject: String) -> String? {
-        guard isGroup else { return nil }
-        return AttendanceManager.shared.getWarningForSubject(
-            subject,
+    private func recomputeWarningsBySubject() {
+        guard isGroup, !selectedName.isEmpty, isSemesterPublished(activeSemester) else {
+            if !warningsBySubject.isEmpty {
+                warningsBySubject = [:]
+            }
+            return
+        }
+
+        let report = AttendanceManager.shared.calculateReport(
             groupName: selectedName,
             semester: activeSemester,
-            repository: repository
+            repository: repository,
+            weekCalculator: weekCalculator
         )
+        var nextWarnings: [String: String] = [:]
+        for sa in report.subjects where sa.hasWarning {
+            nextWarnings[sa.subjectName] = "🟡 Внимание: уже \(AttendanceManager.formatSkips(sa.missedCount)), пора ходить!"
+        }
+        if nextWarnings != warningsBySubject {
+            warningsBySubject = nextWarnings
+        }
+    }
+
+    public func getWarningForSubject(_ subject: String) -> String? {
+        guard isGroup else { return nil }
+        return warningsBySubject[subject]
+            ?? warningsBySubject[subject.trimmingCharacters(in: .whitespacesAndNewlines)]
     }
 
     // MARK: - Live Timer Loop
     private func startLiveTimer() {
-        Timer.publish(every: 15, on: .main, in: .common)
+        Timer.publish(every: 30, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.updateClockAndNextLesson()
@@ -700,27 +754,47 @@ public final class ScheduleViewModel: ObservableObject {
     }
 
     private func updateLiveClock() {
-        guard let day = currentDaySchedule else {
-            self.clockState = ScheduleClockState()
-            return
-        }
-        let isToday = Calendar.current.isDateInToday(day.date)
-        if isToday {
-            self.clockState = ScheduleClock.compute(for: Date(), scheduleLessons: day.lessons)
+        let newClock: ScheduleClockState
+        if let day = currentDaySchedule, Calendar.current.isDateInToday(day.date) {
+            newClock = ScheduleClock.compute(for: Date(), scheduleLessons: day.lessons)
         } else {
-            self.clockState = ScheduleClockState()
+            newClock = ScheduleClockState()
+        }
+        if newClock != self.clockState {
+            self.clockState = newClock
         }
     }
 
     private func updateNextLesson() {
         let windowSem = SemesterManager.getCurrentWindowSemester(today: Date())
         let sem = isSemesterPublished(windowSem) ? windowSem : activeSemester
-        self.nextUpcomingLesson = repository.findNextLesson(
+        let next = repository.findNextLesson(
             targetName: selectedName,
             isGroup: isGroup,
             weekCalculator: weekCalculator(for: sem),
             semester: sem
         )
+        if !Self.isSameNextLesson(next, self.nextUpcomingLesson) {
+            self.nextUpcomingLesson = next
+        }
+    }
+
+    private static func isSameNextLesson(_ a: NextLesson?, _ b: NextLesson?) -> Bool {
+        switch (a, b) {
+        case (nil, nil):
+            return true
+        case let (lhs?, rhs?):
+            return lhs.subjectName == rhs.subjectName &&
+                lhs.lessonType == rhs.lessonType &&
+                lhs.room == rhs.room &&
+                lhs.teacherOrGroup == rhs.teacherOrGroup &&
+                lhs.lessonNumber == rhs.lessonNumber &&
+                lhs.timeStart == rhs.timeStart &&
+                lhs.timeEnd == rhs.timeEnd &&
+                Calendar.current.isDate(lhs.date, inSameDayAs: rhs.date)
+        default:
+            return false
+        }
     }
 
     private func syncLiveLessonNotifications() {

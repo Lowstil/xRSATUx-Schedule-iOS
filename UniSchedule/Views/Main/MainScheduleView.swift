@@ -34,7 +34,6 @@ private enum MoreAction {
     case homework
     case bells
     case diff
-    case export
     case settings
 }
 
@@ -55,7 +54,6 @@ public struct MainScheduleView: View {
     @State private var showingBellSheet = false
     @State private var showingAttendanceStatsSheet = false
     @State private var showingSettingsSheet = false
-    @State private var showingExportSheet = false
     @State private var showingManualDiffSheet = false
     @State private var showingNoDiffAlert = false
     @State private var showingTeacherAttendanceAlert = false
@@ -92,7 +90,7 @@ public struct MainScheduleView: View {
                 )
 
                 VStack(spacing: 6) {
-                    // Simplified top bar: selector capsule on left + clickable Today pill on right
+                    // Android 1:1 top bar: two-line target capsule on left + Today pill on right
                     topBar
 
                     // Updating / Error Banner
@@ -213,7 +211,9 @@ public struct MainScheduleView: View {
             .onAppear {
                 pagedIndex = viewModel.currentPageIndex
                 let (sem, wk, _) = viewModel.semesterAndWeekAndDay(forPage: viewModel.currentPageIndex)
-                viewModel.ensureWeekLoaded(semester: sem, week: wk)
+                DispatchQueue.main.async {
+                    viewModel.preloadNeighborsIfNeeded(semester: sem, week: wk)
+                }
             }
             .onChange(of: viewModel.currentPageIndex) { _, newPage in
                 if pagedIndex != newPage {
@@ -257,7 +257,6 @@ public struct MainScheduleView: View {
                     onHomeworkHub: { pendingMoreAction = .homework },
                     onBellSchedule: { pendingMoreAction = .bells },
                     onScheduleDiff: { pendingMoreAction = .diff },
-                    onExportSchedule: { pendingMoreAction = .export },
                     onRefreshSchedule: {
                         Task { await viewModel.refresh() }
                     },
@@ -321,14 +320,6 @@ public struct MainScheduleView: View {
                     initialBuildingFilter: target.buildingFilter
                 )
             }
-            .sheet(isPresented: $showingExportSheet) {
-                ExportScheduleSheet(
-                    daySchedule: viewModel.currentDaySchedule,
-                    weekSchedule: viewModel.weekSchedule,
-                    targetName: viewModel.selectedName,
-                    isGroup: viewModel.isGroup
-                )
-            }
             .sheet(
                 isPresented: $viewModel.showScheduleDiffSheet,
                 onDismiss: { viewModel.dismissScheduleDiff() }
@@ -380,22 +371,19 @@ public struct MainScheduleView: View {
                 HapticsService.shared.selection()
                 showingSelectionSheet = true
             }) {
-                HStack(spacing: 7) {
-                    Image(systemName: viewModel.isGroup ? "person.2.fill" : "person.fill")
-                        .font(.caption.bold())
-                        .foregroundColor(.accentColor)
-
+                VStack(alignment: .leading, spacing: 1) {
                     Text(viewModel.selectedName.isEmpty ? "Выбрать" : viewModel.selectedName)
-                        .font(.subheadline.bold())
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
 
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.bold())
+                    Text(viewModel.isGroup ? "Учебная группа" : "Преподаватель")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
                 .liquidGlassCapsule(reducedTransparency: reducedTransparency)
             }
             .buttonStyle(.plain)
@@ -405,16 +393,12 @@ public struct MainScheduleView: View {
             Button(action: {
                 viewModel.jumpToToday()
             }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "calendar")
-                        .font(.caption.bold())
-                    Text(todayPillTitle)
-                        .font(.caption.bold().monospacedDigit())
-                }
-                .foregroundColor(.uniNextSky)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .liquidGlassCapsule(tint: .uniNextSky, reducedTransparency: reducedTransparency)
+                Text(todayPillTitle)
+                    .font(.caption.bold().monospacedDigit())
+                    .foregroundColor(.uniNextSky)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .liquidGlassCapsule(tint: .uniNextSky, reducedTransparency: reducedTransparency)
             }
             .buttonStyle(.plain)
         }
@@ -443,8 +427,6 @@ public struct MainScheduleView: View {
             } else {
                 showingNoDiffAlert = true
             }
-        case .export:
-            showingExportSheet = true
         case .settings:
             showingSettingsSheet = true
         }
@@ -461,6 +443,15 @@ public struct MainScheduleView: View {
             let date = DateUtils.dateForDayInWeek(monday: monday, dayOfWeek: dow)
             return DaySchedule(dayOfWeek: dow, date: date, lessons: [])
         }
+    }
+
+    private func notesSnapshot(for date: Date) -> [String: LessonNote] {
+        let dateStr = DateUtils.isoDateFormatter.string(from: date)
+        var snapshot: [String: LessonNote] = [:]
+        for note in repository.notes where note.dateString == dateStr {
+            snapshot["\(note.lessonNumber)#\(note.subjectName)"] = note
+        }
+        return snapshot
     }
 
     @ViewBuilder
@@ -483,7 +474,43 @@ public struct MainScheduleView: View {
                     await viewModel.refresh()
                 }
             } else if let day = viewModel.weekSchedule(for: sem, week: wk)?.days.first(where: { $0.dayOfWeek == dow }) {
-                dayPage(for: day)
+                let isToday = Calendar.current.isDateInToday(day.date)
+                let isEmpty = day.isDayOff || day.lessons.isEmpty
+
+                DayPageContentView(
+                    day: day,
+                    entries: isEmpty ? [] : viewModel.entries(for: day),
+                    clockState: isToday ? viewModel.clockState : nil,
+                    isGroupView: viewModel.isGroup,
+                    warningsBySubject: viewModel.warningsBySubject,
+                    notesSnapshot: notesSnapshot(for: day.date),
+                    nextUpcomingLesson: isEmpty ? viewModel.nextUpcomingLesson : nil,
+                    reducedTransparency: reducedTransparency,
+                    onRefresh: { await viewModel.refresh() },
+                    onOpenNote: { item in
+                        activeNoteTarget = NoteTarget(item: item, date: day.date)
+                    },
+                    onOpenAttendance: { item in
+                        attendanceTarget = AttendanceTarget(item: item, date: day.date)
+                    },
+                    onToggleSkipped: { item in
+                        if item.isSkipped {
+                            viewModel.clearLessonAttendance(item: item, date: day.date)
+                        } else {
+                            viewModel.markLessonSkipped(item: item, date: day.date)
+                        }
+                    },
+                    onTapTeacher: { teacher in
+                        finderTarget = FinderTarget(teacher: teacher, buildingFilter: nil)
+                    },
+                    onTapRoom: { room in
+                        buildingTarget = BuildingTarget(rawRoom: room)
+                    },
+                    onDeleteCustom: { customId in
+                        viewModel.deleteCustomEvent(id: customId)
+                    }
+                )
+                .equatable()
             } else {
                 VStack {
                     Spacer()
@@ -495,37 +522,47 @@ public struct MainScheduleView: View {
             }
         }
         .onAppear {
-            viewModel.ensureWeekLoaded(semester: sem, week: wk)
+            DispatchQueue.main.async {
+                viewModel.preloadNeighborsIfNeeded(semester: sem, week: wk)
+            }
         }
     }
+}
 
-    @ViewBuilder
-    private func dayPage(for day: DaySchedule) -> some View {
+// MARK: - Equatable Day Page Content (prevents non-today re-renders on clock ticks)
+
+private struct DayPageContentView: View, Equatable {
+    let day: DaySchedule
+    let entries: [DayScheduleEntry]
+    let clockState: ScheduleClockState?
+    let isGroupView: Bool
+    let warningsBySubject: [String: String]
+    let notesSnapshot: [String: LessonNote]
+    let nextUpcomingLesson: NextLesson?
+    let reducedTransparency: Bool
+
+    let onRefresh: () async -> Void
+    let onOpenNote: (ScheduleItem) -> Void
+    let onOpenAttendance: (ScheduleItem) -> Void
+    let onToggleSkipped: (ScheduleItem) -> Void
+    let onTapTeacher: (String) -> Void
+    let onTapRoom: (String) -> Void
+    let onDeleteCustom: (UUID) -> Void
+
+    static func == (lhs: DayPageContentView, rhs: DayPageContentView) -> Bool {
+        lhs.day == rhs.day &&
+        lhs.entries == rhs.entries &&
+        lhs.clockState == rhs.clockState &&
+        lhs.isGroupView == rhs.isGroupView &&
+        lhs.warningsBySubject == rhs.warningsBySubject &&
+        lhs.notesSnapshot == rhs.notesSnapshot &&
+        lhs.nextUpcomingLesson == rhs.nextUpcomingLesson &&
+        lhs.reducedTransparency == rhs.reducedTransparency
+    }
+
+    var body: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
-                // Relative day & full date header
-                HStack {
-                    if let rel = day.relativeLabel {
-                        let badgeColor: Color = rel == "Сегодня"
-                            ? .uniNextSky
-                            : (rel == "Завтра" ? .uniWindowAmber : .uniPurple)
-                        Text(rel)
-                            .font(.subheadline.bold())
-                            .foregroundColor(badgeColor)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 4)
-                            .liquidGlassCapsule(tint: badgeColor, reducedTransparency: reducedTransparency)
-                    }
-
-                    Spacer()
-
-                    Text("\(day.dayNameFull), \(DateUtils.formatDisplayDate(day.date))")
-                        .font(.caption.weight(.medium))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-
+            LazyVStack(spacing: 10) {
                 if day.isDayOff {
                     emptyDayView(
                         icon: "sun.max.fill",
@@ -541,48 +578,33 @@ public struct MainScheduleView: View {
                         subtitle: "Можно заняться своими проектами"
                     )
                 } else {
-                    ForEach(viewModel.entries(for: day)) { entry in
+                    ForEach(entries) { entry in
                         switch entry {
                         case .gap(let gap):
                             LessonWindowCardView(gap: gap, reducedTransparency: reducedTransparency)
                                 .padding(.horizontal)
+
                         case .lesson(let item):
-                            let note = repository.getNote(
-                                dateString: DateUtils.isoDateFormatter.string(from: day.date),
-                                lessonNumber: item.lessonNumber,
-                                subject: item.subjectName
-                            )
-                            let warning = viewModel.getWarningForSubject(item.subjectName)
+                            let note = notesSnapshot["\(item.lessonNumber)#\(item.subjectName)"]
+                            let warning = warningsBySubject[item.subjectName]
+                                ?? warningsBySubject[item.subjectName.trimmingCharacters(in: .whitespacesAndNewlines)]
 
                             LessonCardView(
                                 item: item,
-                                clockState: viewModel.clockState,
-                                isGroupView: viewModel.isGroup,
+                                clockState: clockState,
+                                isGroupView: isGroupView,
                                 date: day.date,
                                 note: note,
                                 warningText: warning,
-                                onOpenNote: {
-                                    activeNoteTarget = NoteTarget(item: item, date: day.date)
-                                },
-                                onOpenAttendance: {
-                                    attendanceTarget = AttendanceTarget(item: item, date: day.date)
-                                },
-                                onToggleSkipped: {
-                                    if item.isSkipped {
-                                        viewModel.clearLessonAttendance(item: item, date: day.date)
-                                    } else {
-                                        viewModel.markLessonSkipped(item: item, date: day.date)
-                                    }
-                                },
-                                onTapTeacher: { teacher in
-                                    finderTarget = FinderTarget(teacher: teacher, buildingFilter: nil)
-                                },
-                                onTapRoom: { room in
-                                    buildingTarget = BuildingTarget(rawRoom: room)
-                                },
+                                reducedTransparency: reducedTransparency,
+                                onOpenNote: { onOpenNote(item) },
+                                onOpenAttendance: { onOpenAttendance(item) },
+                                onToggleSkipped: { onToggleSkipped(item) },
+                                onTapTeacher: onTapTeacher,
+                                onTapRoom: onTapRoom,
                                 onDeleteCustom: {
                                     if let customId = item.customEventId {
-                                        viewModel.deleteCustomEvent(id: customId)
+                                        onDeleteCustom(customId)
                                     }
                                 }
                             )
@@ -591,10 +613,11 @@ public struct MainScheduleView: View {
                     }
                 }
             }
+            .padding(.top, 6)
             .padding(.bottom, 96)
         }
         .refreshable {
-            await viewModel.refresh()
+            await onRefresh()
         }
     }
 
@@ -620,11 +643,10 @@ public struct MainScheduleView: View {
             .padding(.horizontal, 16)
             .liquidGlassCard(cornerRadius: 18, state: .normal, reducedTransparency: reducedTransparency)
 
-            if let next = viewModel.nextUpcomingLesson {
+            if let next = nextUpcomingLesson {
                 NextLessonCardView(nextLesson: next)
             }
         }
         .padding(.horizontal)
-        .padding(.top, 4)
     }
 }
