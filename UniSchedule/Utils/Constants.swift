@@ -87,7 +87,7 @@ public enum Constants {
     public static let prefCustomEventsData = "pref_custom_events_data"
 
     // MARK: - App Metadata
-    public static let aboutVersion = "3.3.1"
+    public static let aboutVersion = "3.3.2"
     public static let githubReleasesURL = "https://github.com/Lowstil/xRSATUx-Schedule-iOS/releases"
     
     // MARK: - App Group for Widgets

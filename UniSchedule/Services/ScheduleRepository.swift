@@ -4,6 +4,27 @@ import Combine
 public final class ScheduleRepository: ObservableObject {
     public static let shared = ScheduleRepository()
 
+    private struct FastTargetCache: Codable {
+        let targetName: String
+        let isGroup: Bool
+        let items: [ScheduleItem]
+        let groups: [String]
+        let teachers: [String]
+        let lastUpdated: Date?
+    }
+
+    private struct SemesterIndexBundle {
+        let items: [ScheduleItem]
+        let groups: [String]
+        let teachers: [String]
+        let lastUpdated: Date
+        let groupIndex: [String: [ScheduleItem]]
+        let teacherIndex: [String: [ScheduleItem]]
+        let distinctRooms: [String]
+        let occupiedRooms: [String: Set<String>]
+        let teacherDisplayNames: [String]
+    }
+
     @Published public private(set) var activeSemester: SemesterType
     @Published public private(set) var allItems: [ScheduleItem] = []
     @Published public private(set) var groups: [String] = []
@@ -22,8 +43,18 @@ public final class ScheduleRepository: ObservableObject {
     private var semesterGroups: [SemesterType: [String]] = [:]
     private var semesterTeachers: [SemesterType: [String]] = [:]
     private var semesterLastUpdated: [SemesterType: Date] = [:]
+    private var semesterGroupIndex: [SemesterType: [String: [ScheduleItem]]] = [:]
+    private var semesterTeacherIndex: [SemesterType: [String: [ScheduleItem]]] = [:]
+    private var semesterDistinctRooms: [SemesterType: [String]] = [:]
+    private var semesterOccupiedRooms: [SemesterType: [String: Set<String>]] = [:]
+    private var semesterTeacherDisplayNames: [SemesterType: [String]] = [:]
+    private var hydrationEpoch: Int = 0
 
     private var documentsDir: URL {
+        Self.resolveDocumentsDir()
+    }
+
+    private static func resolveDocumentsDir() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 
@@ -36,11 +67,27 @@ public final class ScheduleRepository: ObservableObject {
     }
 
     private func cacheFileURL(for semester: SemesterType) -> URL {
+        Self.cacheFileURL(for: semester, documentsDir: documentsDir)
+    }
+
+    private static func cacheFileURL(for semester: SemesterType, documentsDir: URL) -> URL {
         documentsDir.appendingPathComponent("schedule_data_\(semester.rawValue).json")
     }
 
     private func cachedXLSXURL(for semester: SemesterType) -> URL {
+        Self.cachedXLSXURL(for: semester, documentsDir: documentsDir)
+    }
+
+    private static func cachedXLSXURL(for semester: SemesterType, documentsDir: URL) -> URL {
         documentsDir.appendingPathComponent("schedule_cache_\(semester.rawValue).xlsx")
+    }
+
+    private func fastTargetCacheURL(for semester: SemesterType) -> URL {
+        Self.fastTargetCacheURL(for: semester, documentsDir: documentsDir)
+    }
+
+    private static func fastTargetCacheURL(for semester: SemesterType, documentsDir: URL) -> URL {
+        documentsDir.appendingPathComponent("fast_target_\(semester.rawValue).json")
     }
 
     private var notePhotosDir: URL {
@@ -50,25 +97,196 @@ public final class ScheduleRepository: ObservableObject {
     private init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         self.activeSemester = SemesterManager.loadActiveSemester(userDefaults: userDefaults)
-        loadFromCacheOrBundle()
+        loadFastTargetSnapshotOnInit()
         loadFavorites()
         loadNotes()
         loadCustomEvents()
         loadScheduleDiff()
 
+        let epoch = hydrationEpoch
         Task {
+            await hydrateFullDataInBackground(expectedEpoch: epoch)
             await maybeAutoRefresh()
+        }
+    }
+
+    // MARK: - Instant Boot Fast-Target Snapshot & Background Hydration
+    private func loadFastTargetSnapshotOnInit() {
+        let sem = activeSemester
+        let url = fastTargetCacheURL(for: sem)
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let snapshot = try? JSONDecoder().decode(FastTargetCache.self, from: data) else {
+            return
+        }
+
+        let formatter = ISO8601DateFormatter()
+        let parsed = ParsedScheduleData(
+            version: "fast",
+            lastUpdated: snapshot.lastUpdated.map { formatter.string(from: $0) } ?? "",
+            semesterStart: "",
+            groups: snapshot.groups,
+            teachers: snapshot.teachers,
+            items: snapshot.items
+        )
+        let fallbackDate = snapshot.lastUpdated ?? (userDefaults.object(forKey: Constants.prefLastUpdated) as? Date)
+        let bundle = Self.buildIndexBundle(from: parsed, fallbackLastUpdated: fallbackDate)
+        applyBundle(bundle, for: sem)
+        if let lu = snapshot.lastUpdated {
+            semesterLastUpdated[sem] = lu
+        }
+        if userDefaults.object(forKey: Constants.prefSemesterPublishedPrefix + sem.rawValue) == nil,
+           !snapshot.items.isEmpty {
+            setSemesterPublished(true, for: sem)
+        }
+        syncPublishedStateForActiveSemester()
+    }
+
+    public func saveFastTargetCache(for semester: SemesterType, targetName: String? = nil, isGroup: Bool? = nil) {
+        let resolvedName = (targetName ?? userDefaults.string(forKey: Constants.prefSelectionName) ?? "ИВБ-24")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedIsGroup = isGroup ?? ((userDefaults.string(forKey: Constants.prefSelectionType) ?? "group") == "group")
+        guard !resolvedName.isEmpty, !(semesterItems[semester] ?? []).isEmpty else { return }
+
+        let targetItems = rawIndexedItems(for: resolvedName.lowercased(), isGroup: resolvedIsGroup, semester: semester)
+        let allSemGroups = semesterGroups[semester] ?? groups
+        let allSemTeachers = semesterTeachers[semester] ?? teachers
+        let lu = semesterLastUpdated[semester] ?? lastUpdated
+        let url = fastTargetCacheURL(for: semester)
+
+        Self.writeFastTargetCache(
+            to: url,
+            targetName: resolvedName,
+            isGroup: resolvedIsGroup,
+            items: targetItems,
+            groups: allSemGroups,
+            teachers: allSemTeachers,
+            lastUpdated: lu
+        )
+    }
+
+    private static func writeFastTargetCache(
+        to url: URL,
+        targetName: String,
+        isGroup: Bool,
+        items: [ScheduleItem],
+        groups: [String],
+        teachers: [String],
+        lastUpdated: Date?
+    ) {
+        let payload = FastTargetCache(
+            targetName: targetName,
+            isGroup: isGroup,
+            items: items,
+            groups: groups,
+            teachers: teachers,
+            lastUpdated: lastUpdated
+        )
+        if let encoded = try? JSONEncoder().encode(payload) {
+            try? encoded.write(to: url, options: .atomic)
+        }
+    }
+
+    private func hydrateFullDataInBackground(expectedEpoch: Int) async {
+        let docsDir = documentsDir
+        let savedName = (userDefaults.string(forKey: Constants.prefSelectionName) ?? "ИВБ-24")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let savedIsGroup = (userDefaults.string(forKey: Constants.prefSelectionType) ?? "group") == "group"
+        let fallbackLastUpdated = userDefaults.object(forKey: Constants.prefLastUpdated) as? Date
+        var missingPublishedFlags: [SemesterType: Bool] = [:]
+        for sem in SemesterType.allCases {
+            missingPublishedFlags[sem] = (userDefaults.object(forKey: Constants.prefSemesterPublishedPrefix + sem.rawValue) == nil)
+        }
+
+        let loaded = await Task.detached(priority: .userInitiated) { () -> (bundles: [SemesterType: SemesterIndexBundle], newlyPublished: Set<SemesterType>) in
+            Self.migrateLegacyCacheFiles(documentsDir: docsDir)
+            var result: [SemesterType: SemesterIndexBundle] = [:]
+            var toPublish = Set<SemesterType>()
+
+            for semester in SemesterType.allCases {
+                if let parsed = Self.loadSemesterCacheFromDisk(for: semester, documentsDir: docsDir), !parsed.items.isEmpty {
+                    result[semester] = Self.buildIndexBundle(from: parsed, fallbackLastUpdated: fallbackLastUpdated)
+                    if missingPublishedFlags[semester] == true {
+                        toPublish.insert(semester)
+                    }
+                }
+            }
+
+            if result[.fall] == nil {
+                if let sample = ScheduleParser.shared.loadBundledSampleSchedule(), !sample.items.isEmpty {
+                    result[.fall] = Self.buildIndexBundle(from: sample, fallbackLastUpdated: fallbackLastUpdated)
+                    toPublish.insert(.fall)
+                } else if let bundleXlsx = Bundle.main.url(forResource: "schedule", withExtension: "xlsx"),
+                          let parsed = try? XLSXReader.shared.parseSchedule(xlsxURL: bundleXlsx),
+                          !parsed.items.isEmpty {
+                    result[.fall] = Self.buildIndexBundle(from: parsed, fallbackLastUpdated: fallbackLastUpdated)
+                    Self.writeParsedDataToCache(parsed, for: .fall, documentsDir: docsDir)
+                    toPublish.insert(.fall)
+                }
+            }
+
+            // Refresh fast_target_<sem>.json off the main thread using indexed items
+            for (sem, bundle) in result where !savedName.isEmpty {
+                let clean = savedName.lowercased()
+                let targetItems: [ScheduleItem]
+                if savedIsGroup {
+                    targetItems = bundle.groupIndex[clean] ?? []
+                } else if let indexed = bundle.teacherIndex[clean], !indexed.isEmpty {
+                    targetItems = indexed
+                } else {
+                    targetItems = bundle.items.filter { $0.teacherName.lowercased().contains(clean) }
+                }
+                Self.writeFastTargetCache(
+                    to: Self.fastTargetCacheURL(for: sem, documentsDir: docsDir),
+                    targetName: savedName,
+                    isGroup: savedIsGroup,
+                    items: targetItems,
+                    groups: bundle.groups,
+                    teachers: bundle.teachers,
+                    lastUpdated: bundle.lastUpdated
+                )
+            }
+
+            return (result, toPublish)
+        }.value
+
+        await MainActor.run {
+            guard expectedEpoch == self.hydrationEpoch else { return }
+
+            var didChange = false
+            for (sem, bundle) in loaded.bundles {
+                let existing = self.semesterItems[sem] ?? []
+                let itemsChanged = existing.count != bundle.items.count || existing != bundle.items
+                let listsChanged = (self.semesterGroups[sem] ?? []) != bundle.groups || (self.semesterTeachers[sem] ?? []) != bundle.teachers
+                if itemsChanged || listsChanged || self.semesterGroupIndex[sem] == nil {
+                    self.applyBundle(bundle, for: sem)
+                    didChange = true
+                }
+                if loaded.newlyPublished.contains(sem) {
+                    self.setSemesterPublished(true, for: sem)
+                }
+            }
+
+            if didChange {
+                self.syncPublishedStateForActiveSemester()
+            }
         }
     }
 
     // MARK: - Initial Load & Per-Semester Migration
     public func loadFromCacheOrBundle() {
+        hydrationEpoch += 1
         migrateLegacyCacheIfNeeded()
 
         semesterItems.removeAll()
         semesterGroups.removeAll()
         semesterTeachers.removeAll()
         semesterLastUpdated.removeAll()
+        semesterGroupIndex.removeAll()
+        semesterTeacherIndex.removeAll()
+        semesterDistinctRooms.removeAll()
+        semesterOccupiedRooms.removeAll()
+        semesterTeacherDisplayNames.removeAll()
 
         for semester in SemesterType.allCases {
             if let parsed = loadSemesterCache(for: semester), !parsed.items.isEmpty {
@@ -94,26 +312,43 @@ public final class ScheduleRepository: ObservableObject {
         }
 
         syncPublishedStateForActiveSemester()
+        for semester in SemesterType.allCases where !(semesterItems[semester] ?? []).isEmpty {
+            saveFastTargetCache(for: semester)
+        }
     }
 
     private func migrateLegacyCacheIfNeeded() {
-        let fm = FileManager.default
-        let fallJson = cacheFileURL(for: .fall)
-        if fm.fileExists(atPath: legacyCacheFileURL.path) && !fm.fileExists(atPath: fallJson.path) {
-            try? fm.moveItem(at: legacyCacheFileURL, to: fallJson)
-            if userDefaults.object(forKey: Constants.prefSemesterPublishedPrefix + SemesterType.fall.rawValue) == nil {
-                setSemesterPublished(true, for: .fall)
-            }
-        }
-        let fallXlsx = cachedXLSXURL(for: .fall)
-        if fm.fileExists(atPath: legacyCachedXLSXURL.path) && !fm.fileExists(atPath: fallXlsx.path) {
-            try? fm.moveItem(at: legacyCachedXLSXURL, to: fallXlsx)
+        let migrated = Self.migrateLegacyCacheFiles(documentsDir: documentsDir)
+        if migrated && userDefaults.object(forKey: Constants.prefSemesterPublishedPrefix + SemesterType.fall.rawValue) == nil {
+            setSemesterPublished(true, for: .fall)
         }
     }
 
-    private func loadSemesterCache(for semester: SemesterType) -> ParsedScheduleData? {
+    @discardableResult
+    private static func migrateLegacyCacheFiles(documentsDir: URL) -> Bool {
         let fm = FileManager.default
-        let jsonURL = cacheFileURL(for: semester)
+        let legacyJson = documentsDir.appendingPathComponent("schedule_data.json")
+        let fallJson = cacheFileURL(for: .fall, documentsDir: documentsDir)
+        var didMoveJson = false
+        if fm.fileExists(atPath: legacyJson.path) && !fm.fileExists(atPath: fallJson.path) {
+            try? fm.moveItem(at: legacyJson, to: fallJson)
+            didMoveJson = true
+        }
+        let legacyXlsx = documentsDir.appendingPathComponent(Constants.scheduleCacheFileName)
+        let fallXlsx = cachedXLSXURL(for: .fall, documentsDir: documentsDir)
+        if fm.fileExists(atPath: legacyXlsx.path) && !fm.fileExists(atPath: fallXlsx.path) {
+            try? fm.moveItem(at: legacyXlsx, to: fallXlsx)
+        }
+        return didMoveJson
+    }
+
+    private func loadSemesterCache(for semester: SemesterType) -> ParsedScheduleData? {
+        Self.loadSemesterCacheFromDisk(for: semester, documentsDir: documentsDir)
+    }
+
+    private static func loadSemesterCacheFromDisk(for semester: SemesterType, documentsDir: URL) -> ParsedScheduleData? {
+        let fm = FileManager.default
+        let jsonURL = cacheFileURL(for: semester, documentsDir: documentsDir)
         if fm.fileExists(atPath: jsonURL.path),
            let data = try? Data(contentsOf: jsonURL),
            let parsed = try? ScheduleParser.shared.parseScheduleJSON(data: data),
@@ -121,11 +356,11 @@ public final class ScheduleRepository: ObservableObject {
             return parsed
         }
 
-        let xlsxURL = cachedXLSXURL(for: semester)
+        let xlsxURL = cachedXLSXURL(for: semester, documentsDir: documentsDir)
         if fm.fileExists(atPath: xlsxURL.path),
            let parsed = try? XLSXReader.shared.parseSchedule(xlsxURL: xlsxURL),
            !parsed.items.isEmpty {
-            saveParsedDataToCache(parsed, for: semester)
+            writeParsedDataToCache(parsed, for: semester, documentsDir: documentsDir)
             return parsed
         }
 
@@ -133,21 +368,115 @@ public final class ScheduleRepository: ObservableObject {
     }
 
     private func storeParsedData(_ data: ParsedScheduleData, for semester: SemesterType) {
-        semesterItems[semester] = data.items
-        semesterGroups[semester] = data.groups
-        semesterTeachers[semester] = data.teachers
-        if let lu = ISO8601DateFormatter().date(from: data.lastUpdated) {
-            semesterLastUpdated[semester] = lu
-        } else if let savedDate = userDefaults.object(forKey: Constants.prefLastUpdated) as? Date {
-            semesterLastUpdated[semester] = savedDate
-        } else {
-            semesterLastUpdated[semester] = Date()
+        let fallbackDate = userDefaults.object(forKey: Constants.prefLastUpdated) as? Date
+        let bundle = Self.buildIndexBundle(from: data, fallbackLastUpdated: fallbackDate)
+        applyBundle(bundle, for: semester)
+    }
+
+    private func applyBundle(_ bundle: SemesterIndexBundle, for semester: SemesterType) {
+        semesterItems[semester] = bundle.items
+        semesterGroups[semester] = bundle.groups
+        semesterTeachers[semester] = bundle.teachers
+        semesterLastUpdated[semester] = bundle.lastUpdated
+        semesterGroupIndex[semester] = bundle.groupIndex
+        semesterTeacherIndex[semester] = bundle.teacherIndex
+        semesterDistinctRooms[semester] = bundle.distinctRooms
+        semesterOccupiedRooms[semester] = bundle.occupiedRooms
+        semesterTeacherDisplayNames[semester] = bundle.teacherDisplayNames
+    }
+
+    private static func buildIndexBundle(
+        from data: ParsedScheduleData,
+        fallbackLastUpdated: Date?
+    ) -> SemesterIndexBundle {
+        var groupIndex: [String: [ScheduleItem]] = [:]
+        var teacherIndex: [String: [ScheduleItem]] = [:]
+        var roomSeen: [String: String] = [:]
+        var occupiedRooms: [String: Set<String>] = [:]
+        var teacherNameSeen: [String: String] = [:]
+        let separators = CharacterSet(charactersIn: ",;/")
+
+        for t in data.teachers {
+            for part in t.components(separatedBy: separators) {
+                let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, trimmed != "-", trimmed != "—" else { continue }
+                let key = trimmed.lowercased()
+                if teacherNameSeen[key] == nil {
+                    teacherNameSeen[key] = trimmed
+                }
+            }
         }
+
+        for item in data.items {
+            let gKey = item.groupName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !gKey.isEmpty {
+                groupIndex[gKey, default: []].append(item)
+            }
+
+            let rawTeacher = item.teacherName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !rawTeacher.isEmpty, rawTeacher != "-", rawTeacher != "—" {
+                var addedKeys = Set<String>()
+                for part in rawTeacher.components(separatedBy: separators) {
+                    let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty, trimmed != "-", trimmed != "—" else { continue }
+                    let tKey = trimmed.lowercased()
+                    if teacherNameSeen[tKey] == nil {
+                        teacherNameSeen[tKey] = trimmed
+                    }
+                    if addedKeys.insert(tKey).inserted {
+                        teacherIndex[tKey, default: []].append(item)
+                    }
+                }
+                let fullKey = rawTeacher.lowercased()
+                if addedKeys.insert(fullKey).inserted {
+                    teacherIndex[fullKey, default: []].append(item)
+                }
+            }
+
+            let room = item.room.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isPhysicalRoomStatic(room) {
+                let rKey = room.lowercased()
+                if roomSeen[rKey] == nil {
+                    roomSeen[rKey] = room
+                }
+            }
+
+            if !item.isCancelled, !room.isEmpty {
+                let slotKey = "\(item.weekType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())_\(item.dayOfWeek)_\(item.lessonNumber)"
+                occupiedRooms[slotKey, default: []].insert(room.lowercased())
+            }
+        }
+
+        let distinctRooms = roomSeen.values.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let teacherDisplayNames = teacherNameSeen.values.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        let isoFormatter = ISO8601DateFormatter()
+        let resolvedLastUpdated = isoFormatter.date(from: data.lastUpdated)
+            ?? fallbackLastUpdated
+            ?? Date()
+
+        return SemesterIndexBundle(
+            items: data.items,
+            groups: data.groups,
+            teachers: data.teachers,
+            lastUpdated: resolvedLastUpdated,
+            groupIndex: groupIndex,
+            teacherIndex: teacherIndex,
+            distinctRooms: distinctRooms,
+            occupiedRooms: occupiedRooms,
+            teacherDisplayNames: teacherDisplayNames
+        )
     }
 
     private func syncPublishedStateForActiveSemester() {
-        self.allItems = semesterItems[activeSemester] ?? []
-        self.lastUpdated = semesterLastUpdated[activeSemester] ?? (userDefaults.object(forKey: Constants.prefLastUpdated) as? Date)
+        let nextItems = semesterItems[activeSemester] ?? []
+        if self.allItems.count != nextItems.count || self.allItems != nextItems {
+            self.allItems = nextItems
+        }
+
+        let nextLastUpdated = semesterLastUpdated[activeSemester] ?? (userDefaults.object(forKey: Constants.prefLastUpdated) as? Date)
+        if self.lastUpdated != nextLastUpdated {
+            self.lastUpdated = nextLastUpdated
+        }
 
         var groupSet = Set<String>()
         var teacherSet = Set<String>()
@@ -163,14 +492,30 @@ public final class ScheduleRepository: ObservableObject {
                 if !t.isEmpty { teacherSet.insert(t) }
             }
         }
-        self.groups = groupSet.sorted()
-        self.teachers = teacherSet.sorted()
+        let sortedGroups = groupSet.sorted()
+        let sortedTeachers = teacherSet.sorted()
+        if self.groups != sortedGroups {
+            self.groups = sortedGroups
+        }
+        if self.teachers != sortedTeachers {
+            self.teachers = sortedTeachers
+        }
     }
 
     private func saveParsedDataToCache(_ data: ParsedScheduleData, for semester: SemesterType) {
-        if let encoded = try? JSONEncoder().encode(data) {
-            try? encoded.write(to: cacheFileURL(for: semester), options: .atomic)
+        if Self.writeParsedDataToCache(data, for: semester, documentsDir: documentsDir) {
             userDefaults.set(Date(), forKey: Constants.prefLastUpdated)
+        }
+    }
+
+    @discardableResult
+    private static func writeParsedDataToCache(_ data: ParsedScheduleData, for semester: SemesterType, documentsDir: URL) -> Bool {
+        guard let encoded = try? JSONEncoder().encode(data) else { return false }
+        do {
+            try encoded.write(to: cacheFileURL(for: semester, documentsDir: documentsDir), options: .atomic)
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -298,8 +643,12 @@ public final class ScheduleRepository: ObservableObject {
         setSemesterHash(newHash, for: targetSem)
         setSemesterPublished(true, for: targetSem)
 
+        // Build O(1) index bundle off the main thread before hopping to MainActor
+        let prebuiltBundle = Self.buildIndexBundle(from: parsed, fallbackLastUpdated: now)
+
         // 4. Snapshot old target items within targetSem, update memory state, compute diff, and auto-switch if needed
         await MainActor.run {
+            self.hydrationEpoch += 1
             let savedName = (self.userDefaults.string(forKey: Constants.prefSelectionName) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let savedIsGroup = (self.userDefaults.string(forKey: Constants.prefSelectionType) ?? "group") == "group"
@@ -309,7 +658,7 @@ public final class ScheduleRepository: ObservableObject {
                 ? self.getSchedule(for: savedName, isGroup: savedIsGroup, semester: targetSem)
                 : []
 
-            self.storeParsedData(parsed, for: targetSem)
+            self.applyBundle(prebuiltBundle, for: targetSem)
             self.semesterLastUpdated[targetSem] = now
 
             if targetSem == windowSem && !wasTargetPublished {
@@ -321,6 +670,8 @@ public final class ScheduleRepository: ObservableObject {
             if targetSem == self.activeSemester {
                 self.lastUpdated = now
             }
+
+            self.saveFastTargetCache(for: targetSem)
 
             if shouldComputeDiff {
                 let newTargetItems = self.getSchedule(for: savedName, isGroup: savedIsGroup, semester: targetSem)
@@ -377,7 +728,25 @@ public final class ScheduleRepository: ObservableObject {
         }
     }
 
-    // MARK: - Query Schedule
+    // MARK: - Query Schedule (O(1) Indexed Lookups)
+    private func rawIndexedItems(for cleanTarget: String, isGroup: Bool, semester: SemesterType) -> [ScheduleItem] {
+        if isGroup {
+            return semesterGroupIndex[semester]?[cleanTarget] ?? []
+        }
+        if let indexed = semesterTeacherIndex[semester]?[cleanTarget], !indexed.isEmpty {
+            return indexed
+        }
+        return items(for: semester).filter { $0.teacherName.lowercased().contains(cleanTarget) }
+    }
+
+    private static func matchesSkippedSet(_ skippedSet: Set<String>, dateString: String, lessonNumber: Int, subject: String) -> Bool {
+        if skippedSet.isEmpty { return false }
+        let exact = "\(dateString)#\(lessonNumber)#\(subject.trimmingCharacters(in: .whitespacesAndNewlines))"
+        if skippedSet.contains(exact) { return true }
+        let shortKey = "\(dateString)#\(lessonNumber)#"
+        return skippedSet.contains(where: { $0.hasPrefix(shortKey) })
+    }
+
     public func getSchedule(for targetName: String, isGroup: Bool) -> [ScheduleItem] {
         getSchedule(for: targetName, isGroup: isGroup, semester: activeSemester)
     }
@@ -388,19 +757,15 @@ public final class ScheduleRepository: ObservableObject {
 
         let excluded = getExcludedSubjects(for: targetName)
         let todayStr = DateUtils.isoDateFormatter.string(from: Date())
-        let sourceItems = items(for: semester)
+        let skippedSet = Set(userDefaults.stringArray(forKey: Constants.prefSkippedLessons) ?? [])
+        let sourceItems = rawIndexedItems(for: clean, isGroup: isGroup, semester: semester)
 
-        return sourceItems.filter { item in
-            let match = isGroup
-                ? item.groupName.lowercased() == clean
-                : item.teacherName.lowercased().contains(clean)
-            return match
-        }.map { item in
+        return sourceItems.map { item in
             var copy = item
             if excluded.contains(item.subjectName) {
                 copy.isExcluded = true
             }
-            if self.isLessonSkipped(dateString: todayStr, lessonNumber: item.lessonNumber, subject: item.subjectName) {
+            if Self.matchesSkippedSet(skippedSet, dateString: todayStr, lessonNumber: item.lessonNumber, subject: item.subjectName) {
                 copy.isSkipped = true
             }
             return copy
@@ -411,13 +776,15 @@ public final class ScheduleRepository: ObservableObject {
         let clean = groupName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !clean.isEmpty else { return [] }
         var seen: [String: String] = [:]
-        for item in semesterItems.values.flatMap({ $0 }) {
-            guard item.groupName.lowercased() == clean else { continue }
-            let sub = item.subjectName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !sub.isEmpty else { continue }
-            let key = sub.lowercased()
-            if seen[key] == nil {
-                seen[key] = sub
+        for semester in SemesterType.allCases {
+            let groupItems = semesterGroupIndex[semester]?[clean] ?? []
+            for item in groupItems {
+                let sub = item.subjectName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !sub.isEmpty else { continue }
+                let key = sub.lowercased()
+                if seen[key] == nil {
+                    seen[key] = sub
+                }
             }
         }
         return seen.values.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
@@ -437,14 +804,11 @@ public final class ScheduleRepository: ObservableObject {
 
         let targetSemester = semester ?? activeSemester
         let excluded = getExcludedSubjects(for: targetName)
-        let targetItems = items(for: targetSemester).filter { item in
-            isGroup
-                ? item.groupName.lowercased() == clean
-                : item.teacherName.lowercased().contains(clean)
-        }
+        let targetItems = rawIndexedItems(for: clean, isGroup: isGroup, semester: targetSemester)
         let targetCustomEvents = getCustomEvents(for: targetName, isGroup: isGroup)
         guard !targetItems.isEmpty || !targetCustomEvents.isEmpty else { return nil }
 
+        let skippedSet = Set(userDefaults.stringArray(forKey: Constants.prefSkippedLessons) ?? [])
         let calendar = Calendar.current
         let nowTimeStr = DateUtils.timeFormatter.string(from: fromDate)
 
@@ -461,15 +825,16 @@ public final class ScheduleRepository: ObservableObject {
 
             var dayLessons: [ScheduleItem] = []
             if weekNum > 0, let wt = weekType {
+                let wtLower = wt.lowercased()
                 dayLessons = targetItems.filter { item in
                     guard item.dayOfWeek == dow,
-                          item.weekType.lowercased() == wt.lowercased(),
+                          item.weekType.lowercased() == wtLower,
                           item.isActiveOnWeek(weekNum),
                           !item.isCancelled,
                           !excluded.contains(item.subjectName) else {
                         return false
                     }
-                    return !self.isLessonSkipped(dateString: checkDateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
+                    return !Self.matchesSkippedSet(skippedSet, dateString: checkDateStr, lessonNumber: item.lessonNumber, subject: item.subjectName)
                 }
             }
 
@@ -512,6 +877,10 @@ public final class ScheduleRepository: ObservableObject {
 
     // MARK: - Teacher & Room Finder Queries (Semester-Scoped)
     public func getAllTeacherNames(semester: SemesterType? = nil) -> [String] {
+        if let sem = semester, let cached = semesterTeacherDisplayNames[sem], !cached.isEmpty {
+            return cached
+        }
+
         var seen: [String: String] = [:]
         let separators = CharacterSet(charactersIn: ",;/")
 
@@ -531,7 +900,14 @@ public final class ScheduleRepository: ObservableObject {
             for item in items(for: sem) { ingest(item.teacherName) }
         } else {
             for t in teachers { ingest(t) }
-            for item in allItems { ingest(item.teacherName) }
+            if let activeNames = semesterTeacherDisplayNames[activeSemester] {
+                for t in activeNames {
+                    let key = t.lowercased()
+                    if seen[key] == nil { seen[key] = t }
+                }
+            } else {
+                for item in allItems { ingest(item.teacherName) }
+            }
         }
 
         return seen.values.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
@@ -546,15 +922,15 @@ public final class ScheduleRepository: ObservableObject {
         let clean = teacher.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !clean.isEmpty else { return [] }
 
+        let targetSemester = semester ?? activeSemester
         let wt = weekType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let sourceItems = items(for: semester ?? activeSemester)
+        let sourceItems = rawIndexedItems(for: clean, isGroup: false, semester: targetSemester)
         var seenSignatures = Set<String>()
 
         return sourceItems.filter { item in
             !item.isCancelled &&
             item.dayOfWeek == dayOfWeek &&
-            item.weekType.lowercased() == wt &&
-            item.teacherName.lowercased().contains(clean)
+            item.weekType.lowercased() == wt
         }
         .sorted { a, b in
             if a.lessonNumber != b.lessonNumber { return a.lessonNumber < b.lessonNumber }
@@ -567,19 +943,14 @@ public final class ScheduleRepository: ObservableObject {
     }
 
     public func getAllDistinctRooms(buildingFilter: String? = nil, semester: SemesterType? = nil) -> [String] {
-        var seen: [String: String] = [:]
-        let sourceItems = items(for: semester ?? activeSemester)
-
-        for item in sourceItems {
-            let room = item.room.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard isPhysicalRoom(room), matchesBuildingFilter(room, filter: buildingFilter) else { continue }
-            let key = room.lowercased()
-            if seen[key] == nil {
-                seen[key] = room
-            }
+        let targetSemester = semester ?? activeSemester
+        let distinct = semesterDistinctRooms[targetSemester] ?? []
+        guard let rawFilter = buildingFilter?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawFilter.isEmpty,
+              rawFilter.caseInsensitiveCompare("Все") != .orderedSame else {
+            return distinct
         }
-
-        return seen.values.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        return distinct.filter { Self.matchesBuildingFilter($0, filter: rawFilter) }
     }
 
     public func getFreeRooms(
@@ -592,33 +963,22 @@ public final class ScheduleRepository: ObservableObject {
         let targetSemester = semester ?? activeSemester
         let distinctRooms = getAllDistinctRooms(buildingFilter: buildingFilter, semester: targetSemester)
         let wt = weekType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let sourceItems = items(for: targetSemester)
-
-        var occupied = Set<String>()
-        for item in sourceItems {
-            guard !item.isCancelled,
-                  item.dayOfWeek == dayOfWeek,
-                  item.lessonNumber == lessonNumber,
-                  item.weekType.lowercased() == wt else {
-                continue
-            }
-            let room = item.room.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !room.isEmpty {
-                occupied.insert(room.lowercased())
-            }
+        let slotKey = "\(wt)_\(dayOfWeek)_\(lessonNumber)"
+        let occupied = semesterOccupiedRooms[targetSemester]?[slotKey] ?? []
+        if occupied.isEmpty {
+            return distinctRooms
         }
-
         return distinctRooms.filter { !occupied.contains($0.lowercased()) }
     }
 
-    private func isPhysicalRoom(_ room: String) -> Bool {
+    private static func isPhysicalRoomStatic(_ room: String) -> Bool {
         guard !room.isEmpty, room != "-", room != "—" else { return false }
         let low = room.lowercased()
         let onlineMarkers = ["онлайн", "online", "saby", "дистант", "сдо"]
         return !onlineMarkers.contains(where: { low.contains($0) })
     }
 
-    private func matchesBuildingFilter(_ room: String, filter: String?) -> Bool {
+    private static func matchesBuildingFilter(_ room: String, filter: String?) -> Bool {
         guard let rawFilter = filter?.trimmingCharacters(in: .whitespacesAndNewlines),
               !rawFilter.isEmpty,
               rawFilter.caseInsensitiveCompare("Все") != .orderedSame else {
@@ -858,10 +1218,12 @@ public final class ScheduleRepository: ObservableObject {
 
     // MARK: - Clear All Data
     public func clearAllData() {
+        hydrationEpoch += 1
         let fm = FileManager.default
         for semester in SemesterType.allCases {
             try? fm.removeItem(at: cacheFileURL(for: semester))
             try? fm.removeItem(at: cachedXLSXURL(for: semester))
+            try? fm.removeItem(at: fastTargetCacheURL(for: semester))
             userDefaults.removeObject(forKey: Constants.prefSemesterHashPrefix + semester.rawValue)
             userDefaults.removeObject(forKey: Constants.prefSemesterPublishedPrefix + semester.rawValue)
             userDefaults.removeObject(forKey: Constants.prefSemesterStartPrefix + semester.rawValue)
@@ -1015,5 +1377,6 @@ public final class ScheduleRepository: ObservableObject {
         }
         userDefaults.set(Array(set), forKey: key)
         AttendanceManager.shared.invalidateCache()
+        NotificationCenter.default.post(name: NSNotification.Name("AttendanceChanged"), object: nil)
     }
 }

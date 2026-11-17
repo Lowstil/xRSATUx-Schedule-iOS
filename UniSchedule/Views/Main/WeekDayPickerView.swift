@@ -6,14 +6,15 @@ public struct WeekDayPickerView: View {
     public let isEven: Bool
     public let selectedDayOfWeek: Int
     public let days: [DaySchedule]
-    
+
     public let onPreviousWeek: () -> Void
     public let onNextWeek: () -> Void
     public let onResetWeek: () -> Void
     public let onSelectDay: (Int) -> Void
-    
+
     @AppStorage(Constants.prefReducedTransparency) private var reducedTransparency = false
-    
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+
     public init(
         activeSemester: SemesterType = .fall,
         weekNumber: Int,
@@ -35,24 +36,28 @@ public struct WeekDayPickerView: View {
         self.onResetWeek = onResetWeek
         self.onSelectDay = onSelectDay
     }
-    
+
+    private var effectiveReduced: Bool {
+        reducedTransparency || systemReduceTransparency
+    }
+
     private var isAtFirstWeek: Bool {
         activeSemester == .fall && weekNumber <= 1
     }
-    
+
     private var isAtLastWeek: Bool {
         activeSemester == .spring && weekNumber >= SemesterManager.totalWeeks
     }
-    
+
     private var dateRangeLabel: String {
         guard let first = days.first?.date, let last = days.last?.date else { return "" }
-        return "\(DateUtils.formatDisplayDate(first)) – \(DateUtils.formatDisplayDate(last))"
+        return "\(DateUtils.formatDisplayDateShort(first)) – \(DateUtils.formatDisplayDateShort(last))"
     }
-    
+
     public var body: some View {
-        VStack(spacing: 10) {
-            // Week switcher row
-            HStack(spacing: 10) {
+        VStack(spacing: 8) {
+            // Unified Android-style Glass week switcher card
+            HStack(spacing: 6) {
                 Button(action: {
                     HapticsService.shared.selection()
                     onPreviousWeek()
@@ -61,37 +66,38 @@ public struct WeekDayPickerView: View {
                         .font(.subheadline.bold())
                         .foregroundColor(.primary)
                         .opacity(isAtFirstWeek ? 0.3 : 1.0)
-                        .frame(width: 34, height: 34)
-                        .liquidGlassCapsule(reducedTransparency: reducedTransparency)
+                        .frame(width: 36, height: 34)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .disabled(isAtFirstWeek)
-                
-                Spacer()
-                
+
+                Spacer(minLength: 4)
+
                 Button(action: {
                     HapticsService.shared.selection()
                     onResetWeek()
                 }) {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 1.5) {
                         Text("\(activeSemester.shortName) · Неделя \(weekNumber) (\(isEven ? "Чётная" : "Нечётная"))")
                             .font(.subheadline.bold())
                             .foregroundColor(.primary)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                        
+                            .minimumScaleFactor(0.82)
+
                         if !dateRangeLabel.isEmpty {
                             Text(dateRangeLabel)
                                 .font(.caption2.monospacedDigit())
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                
-                Spacer()
-                
+
+                Spacer(minLength: 4)
+
                 Button(action: {
                     HapticsService.shared.selection()
                     onNextWeek()
@@ -100,67 +106,60 @@ public struct WeekDayPickerView: View {
                         .font(.subheadline.bold())
                         .foregroundColor(.primary)
                         .opacity(isAtLastWeek ? 0.3 : 1.0)
-                        .frame(width: 34, height: 34)
-                        .liquidGlassCapsule(reducedTransparency: reducedTransparency)
+                        .frame(width: 36, height: 34)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .disabled(isAtLastWeek)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .liquidGlassCard(cornerRadius: 20, state: .normal, reducedTransparency: effectiveReduced)
             .padding(.horizontal)
-            
-            // Days horizontal capsules (Mon-Sat)
-            HStack(spacing: 7) {
+
+            // Slim crisp weekday pills (Mon-Sat): short name + day number + tiny 4pt today dot
+            HStack(spacing: 6) {
                 ForEach(days) { day in
                     let isSelected = (day.dayOfWeek == selectedDayOfWeek)
                     let isToday = Calendar.current.isDateInToday(day.date)
                     let dayNum = Calendar.current.component(.day, from: day.date)
-                    
+
                     Button(action: {
                         HapticsService.shared.selection()
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.easeInOut(duration: 0.18)) {
                             onSelectDay(day.dayOfWeek)
                         }
                     }) {
-                        VStack(spacing: 4) {
+                        VStack(spacing: 3) {
                             Text(day.dayNameShort)
-                                .font(.caption2.bold())
+                                .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(isSelected ? .white.opacity(0.92) : (isToday ? .uniNextSky : .secondary))
-                            
+
                             Text("\(dayNum)")
                                 .font(.subheadline.bold().monospacedDigit())
                                 .foregroundColor(isSelected ? .white : .primary)
-                            
-                            if isToday {
-                                Circle()
-                                    .fill(isSelected ? Color.white : Color.uniNextSky)
-                                    .frame(width: 5, height: 5)
-                            } else {
-                                Text("\(day.lessons.count)")
-                                    .font(.system(size: 9, weight: .semibold).monospacedDigit())
-                                    .foregroundColor(isSelected ? .white.opacity(0.85) : .secondary)
-                            }
+
+                            Circle()
+                                .fill(isToday ? (isSelected ? Color.white : Color.uniNextSky) : Color.clear)
+                                .frame(width: 4, height: 4)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 6)
                         .background(dayCapsuleBackground(isSelected: isSelected, isToday: isToday))
                         .overlay(dayCapsuleBorder(isSelected: isSelected, isToday: isToday))
-                        .shadow(
-                            color: isSelected ? Color.accentColor.opacity(0.30) : Color.clear,
-                            radius: isSelected ? 8 : 0,
-                            x: 0,
-                            y: isSelected ? 4 : 0
-                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
-    
+
     @ViewBuilder
     private func dayCapsuleBackground(isSelected: Bool, isToday: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 15, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         if isSelected {
             shape.fill(
                 LinearGradient(
@@ -169,18 +168,15 @@ public struct WeekDayPickerView: View {
                     endPoint: .bottomTrailing
                 )
             )
-        } else if reducedTransparency {
+        } else if effectiveReduced {
             shape.fill(isToday ? Color.uniNextSky.opacity(0.16) : Color.uniGlassSurfaceFallback)
         } else {
-            ZStack {
-                shape.fill(.ultraThinMaterial)
-                shape.fill(isToday ? Color.uniNextSky.opacity(0.14) : Color.uniGlassSurface)
-            }
+            shape.fill(isToday ? Color.uniNextSky.opacity(0.14) : Color.uniGlassSurface)
         }
     }
-    
+
     private func dayCapsuleBorder(isSelected: Bool, isToday: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 15, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         return shape.strokeBorder(
             LinearGradient(
                 colors: isSelected
@@ -191,7 +187,7 @@ public struct WeekDayPickerView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            lineWidth: isSelected || isToday ? 1.3 : 1.0
+            lineWidth: isSelected || isToday ? 1.2 : 1.0
         )
     }
 }

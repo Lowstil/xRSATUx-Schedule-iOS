@@ -31,45 +31,47 @@ public struct FavoritesBarView: View {
                     ForEach(favorites) { item in
                         let isSelected = item.name.lowercased() == currentTarget.lowercased()
                         
-                        HStack(spacing: 6) {
-                            Image(systemName: item.type == .group ? "person.2.fill" : "person.crop.rectangle.fill")
-                                .font(.caption2)
-                            Text(item.name)
-                                .font(.subheadline.bold())
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .foregroundColor(isSelected ? .white : .primary)
-                        .background(
-                            Group {
-                                if isSelected {
-                                    Capsule()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [Color.accentColor, Color.uniNextSky.opacity(0.9)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
+                        Text(item.name)
+                            .font(.system(size: 13, weight: isSelected ? .bold : .semibold))
+                            .lineLimit(1)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .foregroundColor(isSelected ? .white : .primary)
+                            .background(
+                                Group {
+                                    if isSelected {
+                                        Capsule()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [Color.accentColor, Color.uniNextSky.opacity(0.9)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
                                             )
-                                        )
-                                } else {
-                                    Capsule().fill(Color.clear)
+                                    } else {
+                                        Capsule()
+                                            .fill(reducedTransparency ? Color.uniGlassSurfaceFallback : Color.uniGlassCapsule)
+                                    }
                                 }
+                            )
+                            .overlay(
+                                Capsule().strokeBorder(
+                                    isSelected
+                                        ? Color.white.opacity(0.28)
+                                        : Color.uniGlassStrokeMid,
+                                    lineWidth: 1
+                                )
+                            )
+                            .contentShape(Capsule())
+                            .onTapGesture {
+                                onSelect(item)
+                                HapticsService.shared.selection()
                             }
-                        )
-                        .liquidGlassCapsule(
-                            tint: isSelected ? .accentColor : nil,
-                            reducedTransparency: reducedTransparency
-                        )
-                        .contentShape(Capsule())
-                        .onTapGesture {
-                            onSelect(item)
-                            HapticsService.shared.selection()
-                        }
-                        .onLongPressGesture(minimumDuration: 0.45) {
-                            HapticsService.shared.impact(.medium)
-                            favoriteActionTarget = item
-                        }
-                        .accessibilityAddTraits(.isButton)
+                            .onLongPressGesture(minimumDuration: 0.45) {
+                                HapticsService.shared.impact(.medium)
+                                favoriteActionTarget = item
+                            }
+                            .accessibilityAddTraits(.isButton)
                     }
                 }
                 .padding(.horizontal)
@@ -169,7 +171,21 @@ public struct SelectionView: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .liquidGlassCard(cornerRadius: 14, state: .normal, reducedTransparency: reducedTransparency)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(reducedTransparency ? Color.uniGlassSurfaceFallback : Color.uniGlassSurface)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .strokeBorder(
+                                        LinearGradient(
+                                            colors: [Color.uniGlassStrokeStart, Color.uniGlassStrokeEnd],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 onSelect(item.name, item.type == .group)
